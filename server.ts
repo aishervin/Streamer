@@ -78,9 +78,66 @@ const backgroundUpload = multer({
 const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.flac']);
 
 // Streaming state
+export interface LiveTvChannel {
+  id: string;
+  name: string;
+  nameFa: string;
+  category: string;
+  streamUrl: string;
+  description: string;
+  quality: string;
+  badge?: string;
+}
+
+const LIVE_TV_CHANNELS: LiveTvChannel[] = [
+  {
+    id: 'pmc',
+    name: 'PMC Music HD',
+    nameFa: 'شبکه موسیقی پی‌ام‌سی',
+    category: 'Persian Pop / Music Video',
+    streamUrl: 'https://pmcrohls.wns.live/hls/stream.m3u8',
+    description: 'پخش زنده ۲۴ ساعته برترین موزیک ویدیوهای فارسی و روز جهان با کیفیت فول اچ‌دی',
+    quality: '1080p HD',
+    badge: 'محبوب‌ترین',
+  },
+  {
+    id: 'radiojavan',
+    name: 'Radio Javan TV',
+    nameFa: 'رادیو جوان تی‌وی',
+    category: 'Persian Pop & HipHop',
+    streamUrl: 'https://rjtvhls.wns.live/hls/stream.m3u8',
+    description: 'شبکه رسمی تصویری رادیو جوان؛ ویدیوکلیپ‌های انحصاری پاپ، رپ و برنامه‌های سرگرمی',
+    quality: '1080p HD',
+    badge: 'اختصاصی',
+  },
+  {
+    id: 'deluxe',
+    name: 'Deluxe Music TV',
+    nameFa: 'دلوکس موزیک اروپا',
+    category: 'European Pop / Electronic',
+    streamUrl: 'https://sdn-global-live-streaming-packager-cache.3qsdn.com/13456/13456_264_live.m3u8',
+    description: 'معروف‌ترین شبکه تلویزیونی موسیقی بدون توقف آلمان و اروپا با صدای دالبی و تصویر شفاف',
+    quality: '720p HD',
+    badge: 'بین‌المللی',
+  },
+  {
+    id: 'avafamily',
+    name: 'AVA Family / Music',
+    nameFa: 'شبکه آوا فمیلی',
+    category: 'Entertainment / Music',
+    streamUrl: 'https://familyhls.avatv.live/hls/stream.m3u8',
+    description: 'پخش زنده برنامه‌های تفریحی، سریال‌ها و موسیقی فارسی',
+    quality: '720p HD',
+  },
+];
+
 interface StreamState {
   isStreaming: boolean;
   destination: 'channel' | 'group' | 'custom' | null;
+  sourceType: 'playlist' | 'live_tv';
+  channelName?: string;
+  liveStreamUrl?: string;
+  quality?: '480p' | '720p' | '1080p';
   targetUrlMasked: string;
   rawTargetUrl: string;
   startedAt: Date | null;
@@ -93,6 +150,8 @@ interface StreamState {
 const streamState: StreamState = {
   isStreaming: false,
   destination: null,
+  sourceType: 'playlist',
+  quality: '480p',
   targetUrlMasked: '',
   rawTargetUrl: '',
   startedAt: null,
@@ -175,6 +234,10 @@ app.get('/api/status', (_req, res) => {
     stream: {
       isStreaming: streamState.isStreaming,
       destination: streamState.destination,
+      sourceType: streamState.sourceType,
+      channelName: streamState.channelName,
+      liveStreamUrl: streamState.liveStreamUrl,
+      quality: streamState.quality,
       targetUrlMasked: streamState.targetUrlMasked,
       startedAt: streamState.startedAt ? streamState.startedAt.toISOString() : null,
       uptimeSeconds,
@@ -188,6 +251,11 @@ app.get('/api/status', (_req, res) => {
       playlistFileExists: fs.existsSync(PLAYLIST_FILE),
     },
   });
+});
+
+// 1.1 TV Channels
+app.get('/api/tv/channels', (_req, res) => {
+  res.json({ channels: LIVE_TV_CHANNELS });
 });
 
 // 2. Library Tracks
@@ -492,7 +560,14 @@ app.post('/api/stream/start', (req, res) => {
     return res.status(400).json({ error: 'Stream is already running' });
   }
 
-  const { destination = 'channel', customUrl } = req.body || {};
+  const {
+    destination = 'channel',
+    customUrl,
+    sourceType = 'playlist',
+    liveStreamUrl,
+    channelName,
+    quality = '480p',
+  } = req.body || {};
 
   let targetUrl = '';
   if (destination === 'channel') {
@@ -509,27 +584,36 @@ app.post('/api/stream/start', (req, res) => {
     });
   }
 
-  // Ensure playlist has items
-  if (!fs.existsSync(PLAYLIST_FILE) || fs.readFileSync(PLAYLIST_FILE, 'utf-8').trim().length === 0) {
-    // Attempt auto-rebuild
-    const files = rebuildPlaylist();
-    if (files.length === 0) {
+  if (sourceType === 'live_tv') {
+    if (!liveStreamUrl || !liveStreamUrl.startsWith('http')) {
+      return res.status(400).json({ error: 'Invalid live stream URL provided for TV relay.' });
+    }
+  } else {
+    // Ensure playlist has items
+    if (!fs.existsSync(PLAYLIST_FILE) || fs.readFileSync(PLAYLIST_FILE, 'utf-8').trim().length === 0) {
+      const files = rebuildPlaylist();
+      if (files.length === 0) {
+        return res.status(400).json({
+          error: 'Playlist is empty. Please upload and optimize audio tracks in music-optimized/ first.',
+        });
+      }
+    }
+
+    // Ensure background image exists
+    if (!fs.existsSync(BACKGROUND_FILE)) {
       return res.status(400).json({
-        error: 'Playlist is empty. Please upload and optimize audio tracks in music-optimized/ first.',
+        error: 'assets/background.jpg is missing. Please upload or generate a background image.',
       });
     }
-  }
-
-  // Ensure background image exists
-  if (!fs.existsSync(BACKGROUND_FILE)) {
-    return res.status(400).json({
-      error: 'assets/background.jpg is missing. Please upload or generate a background image.',
-    });
   }
 
   const abortController = new AbortController();
   streamState.isStreaming = true;
   streamState.destination = destination;
+  streamState.sourceType = sourceType;
+  streamState.channelName = channelName || (sourceType === 'live_tv' ? 'Live TV' : undefined);
+  streamState.liveStreamUrl = liveStreamUrl;
+  streamState.quality = quality;
   streamState.rawTargetUrl = targetUrl;
   // Mask secret key portion in UI
   const masked = targetUrl.replace(/(\/s\/)[^/?#]+/g, '$1******');
@@ -538,14 +622,18 @@ app.post('/api/stream/start', (req, res) => {
   streamState.reconnectCount = 0;
   streamState.abortController = abortController;
 
-  appendLog(`Starting Telegram stream to [${destination}] destination (${masked})...`, 'stream');
+  const sourceDesc = sourceType === 'live_tv' ? `Live TV [${streamState.channelName} (${streamState.quality})]` : 'Local Playlist';
+  appendLog(`Starting Telegram stream (${sourceDesc}) to [${destination}] destination (${masked})...`, 'stream');
 
-  // Spawn streaming loop matching stream.yml
+  // Spawn streaming loop
   runStreamLoop(targetUrl, abortController);
 
   res.json({
     success: true,
     destination,
+    sourceType,
+    channelName: streamState.channelName,
+    quality: streamState.quality,
     maskedUrl: masked,
   });
 });
@@ -554,45 +642,86 @@ app.post('/api/stream/start', (req, res) => {
 function runStreamLoop(targetUrl: string, abortController: AbortController) {
   if (abortController.signal.aborted) return;
 
-  // Exact FFmpeg command from .github/workflows/stream.yml:
-  // ffmpeg -hide_banner -loglevel info \
-  //   -loop 1 -framerate 2 -i assets/background.jpg \
-  //   -re -stream_loop -1 -f concat -safe 0 -i playlist.txt \
-  //   -map 0:v:0 -map 1:a:0 \
-  //   -c:v libx264 -preset ultrafast -tune stillimage \
-  //   -pix_fmt yuv420p -r 2 -g 4 \
-  //   -b:v 80k -maxrate 80k -bufsize 160k \
-  //   -c:a aac -b:a 96k -ar 44100 -ac 2 \
-  //   -f flv "$TG_STREAM_URL"
-  const args = [
-    '-hide_banner',
-    '-loglevel', 'info',
-    '-loop', '1',
-    '-framerate', '2',
-    '-i', 'assets/background.jpg',
-    '-re',
-    '-stream_loop', '-1',
-    '-f', 'concat',
-    '-safe', '0',
-    '-i', 'playlist.txt',
-    '-map', '0:v:0',
-    '-map', '1:a:0',
-    '-c:v', 'libx264',
-    '-preset', 'ultrafast',
-    '-tune', 'stillimage',
-    '-pix_fmt', 'yuv420p',
-    '-r', '2',
-    '-g', '4',
-    '-b:v', '80k',
-    '-maxrate', '80k',
-    '-bufsize', '160k',
-    '-c:a', 'aac',
-    '-b:a', '96k',
-    '-ar', '44100',
-    '-ac', '2',
-    '-f', 'flv',
-    targetUrl,
-  ];
+  let args: string[] = [];
+
+  if (streamState.sourceType === 'live_tv' && streamState.liveStreamUrl) {
+    const q = streamState.quality || '480p';
+    let scaleFilter = 'scale=-2:480';
+    let vBitrate = '500k';
+    let maxBitrate = '600k';
+    let bufSize = '1000k';
+
+    if (q === '720p') {
+      scaleFilter = 'scale=-2:720';
+      vBitrate = '950k';
+      maxBitrate = '1100k';
+      bufSize = '1800k';
+    } else if (q === '1080p') {
+      scaleFilter = 'scale=-2:1080';
+      vBitrate = '1800k';
+      maxBitrate = '2200k';
+      bufSize = '3600k';
+    }
+
+    // Relay live TV stream (e.g. PMC, Radio Javan) directly to Telegram Live with anti-lag settings
+    args = [
+      '-hide_banner',
+      '-loglevel', 'info',
+      '-re',
+      '-i', streamState.liveStreamUrl,
+      '-vf', scaleFilter,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-tune', 'zerolatency',
+      '-pix_fmt', 'yuv420p',
+      '-r', '25',
+      '-g', '50',
+      '-keyint_min', '50',
+      '-b:v', vBitrate,
+      '-maxrate', maxBitrate,
+      '-bufsize', bufSize,
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-ar', '44100',
+      '-ac', '2',
+      '-f', 'flv',
+      '-flvflags', 'no_duration_filesize',
+      targetUrl,
+    ];
+  } else {
+    // Local Playlist + Background image with optimized smooth Telegram keyframes
+    args = [
+      '-hide_banner',
+      '-loglevel', 'info',
+      '-loop', '1',
+      '-framerate', '10',
+      '-i', 'assets/background.jpg',
+      '-re',
+      '-stream_loop', '-1',
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', 'playlist.txt',
+      '-map', '0:v:0',
+      '-map', '1:a:0',
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-tune', 'stillimage',
+      '-pix_fmt', 'yuv420p',
+      '-r', '10',
+      '-g', '20',
+      '-keyint_min', '20',
+      '-b:v', '250k',
+      '-maxrate', '300k',
+      '-bufsize', '600k',
+      '-c:a', 'aac',
+      '-b:a', '96k',
+      '-ar', '44100',
+      '-ac', '2',
+      '-f', 'flv',
+      '-flvflags', 'no_duration_filesize',
+      targetUrl,
+    ];
+  }
 
   appendLog(`[ffmpeg] Launching RTMP encoder pipeline...`, 'stream');
 

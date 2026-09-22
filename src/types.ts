@@ -15,6 +15,10 @@ export interface LibraryStatus {
 export interface StreamStatus {
   isStreaming: boolean;
   destination: 'channel' | 'group' | 'custom' | null;
+  sourceType?: 'playlist' | 'live_tv';
+  channelName?: string;
+  liveStreamUrl?: string;
+  quality?: '480p' | '720p' | '1080p';
   targetUrlMasked?: string;
   startedAt?: string | null;
   uptimeSeconds: number;
@@ -40,5 +44,16 @@ export interface WorkflowRun {
   created_at: string;
   updated_at: string;
   event: string;
+}
+
+export interface LiveTvChannel {
+  id: string;
+  name: string;
+  nameFa: string;
+  category: string;
+  streamUrl: string;
+  description: string;
+  quality: string;
+  badge?: string;
 }
 

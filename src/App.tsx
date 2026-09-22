@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Radio, Music2, Sparkles, Sliders, RefreshCw, AlertTriangle, CheckCircle, Info, GitBranch } from 'lucide-react';
+import { Radio, Music2, Sparkles, Sliders, RefreshCw, AlertTriangle, CheckCircle, Info, GitBranch, Tv } from 'lucide-react';
 import { AudioLibrary } from './components/AudioLibrary.tsx';
 import { OptimizedPlaylist } from './components/OptimizedPlaylist.tsx';
 import { BackgroundCard } from './components/BackgroundCard.tsx';
 import { StreamControl } from './components/StreamControl.tsx';
 import { AudioPlayerBar } from './components/AudioPlayerBar.tsx';
 import { GitHubActionsControl } from './components/GitHubActionsControl.tsx';
+import { LiveTvPlayer } from './components/LiveTvPlayer.tsx';
 import { TrackInfo, StreamStatus, LogEntry } from './types.ts';
 
 export function App() {
@@ -25,7 +26,7 @@ export function App() {
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const [engineTab, setEngineTab] = useState<'container' | 'github'>('container');
+  const [engineTab, setEngineTab] = useState<'container' | 'livetv' | 'github'>('livetv');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // In-browser audio player state
@@ -355,7 +356,22 @@ export function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
         {/* Stream Engine Selector Tabs */}
         <div className="flex flex-wrap items-center justify-between gap-3 bg-zinc-900/50 p-1.5 rounded-xl border border-zinc-800">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setEngineTab('livetv')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+                engineTab === 'livetv'
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Tv className="w-3.5 h-3.5 text-rose-300" />
+              <span>پخش زنده تصویری (PMC / رادیو جوان / IPTV)</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] bg-rose-500/30 text-rose-200 font-bold border border-rose-400/30">
+                تصویری + رله
+              </span>
+            </button>
+
             <button
               onClick={() => setEngineTab('container')}
               className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
@@ -365,7 +381,7 @@ export function App() {
               }`}
             >
               <Radio className="w-3.5 h-3.5" />
-              <span>Direct Cloud Stream (FFmpeg)</span>
+              <span>استریم موزیک لوکال (پلی‌لیست صوتی)</span>
               {status.isStreaming && (
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
               )}
@@ -380,7 +396,7 @@ export function App() {
               }`}
             >
               <GitBranch className="w-3.5 h-3.5" />
-              <span>GitHub Actions Runner (aishervin/Streamer)</span>
+              <span>گیت‌هاب اکشنز (aishervin/Streamer)</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 font-mono">
                 Live
               </span>
@@ -388,17 +404,24 @@ export function App() {
           </div>
 
           <div className="text-[11px] text-zinc-400 font-mono px-3">
-            {engineTab === 'container' ? (
-              <span className="text-cyan-400">● Container: Instant direct broadcast</span>
+            {engineTab === 'livetv' ? (
+              <span className="text-rose-400">● Live TV: پخش و رله بدون لگ شبکه‌های تصویری</span>
+            ) : engineTab === 'container' ? (
+              <span className="text-cyan-400">● Container: پخش پلی‌لیست موزیک با تصویر ثابت</span>
             ) : (
-              <span className="text-indigo-400">● GitHub Actions: Workflow dispatch</span>
+              <span className="text-indigo-400">● GitHub Actions: اجرای گردش‌کار در کلاود گیت‌هاب</span>
             )}
           </div>
         </div>
 
         {/* Stream Control & Live Terminal */}
         <section id="broadcast-section">
-          {engineTab === 'container' ? (
+          {engineTab === 'livetv' ? (
+            <LiveTvPlayer
+              streamStatus={status}
+              onRefreshStatus={fetchStatus}
+            />
+          ) : engineTab === 'container' ? (
             <StreamControl
               status={status}
               logs={logs}
