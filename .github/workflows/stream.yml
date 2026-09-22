@@ -59,7 +59,7 @@ jobs:
               -c:v libx264 -preset ultrafast -tune stillimage \
               -pix_fmt yuv420p -r 2 -g 4 \
               -b:v 80k -maxrate 80k -bufsize 160k \
-              -c:a copy \
+              -c:a aac -b:a 96k -ar 44100 -ac 2 \
               -shortest -f flv "$TG_STREAM_URL" || true
             echo "Stream ended. Reconnecting in 5s..."
             sleep 5
