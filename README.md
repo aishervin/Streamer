@@ -45,7 +45,7 @@
 
 ## تنظیمات فنی
 - کیفیت صدا: در `.github/workflows/optimize.yml` مقدار `-b:a 96k`.
-- تصویر: `assets/background.png` یک تصویر مشکی 640×360 است و قابل جایگزینی است.
+- تصویر: `assets/background.jpg` یک تصویر مشکی 640×360 است و قابل جایگزینی است.
 - ویدیو: 2fps با bitrate حدود 80kbps برای مصرف پایین CPU و پهنای‌باند انتخاب شده.
 - صدای خروجی در استریم re-encode نمی‌شود و با `-c:a copy` ارسال می‌شود.
 - Playlist به‌صورت مرتب‌شده از `music-optimized/` ساخته می‌شود.
@@ -57,7 +57,7 @@
 .github/workflows/stream.yml
 music/.gitkeep
 music-optimized/.gitkeep
-assets/background.png
+assets/background.jpg
 scripts/build_playlist.sh
 scripts/make_background.sh
 .gitignore
