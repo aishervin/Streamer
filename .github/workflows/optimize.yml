@@ -1,0 +1,51 @@
+name: Optimize Music
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Optimize all music files
+        shell: bash
+        run: |
+          mkdir -p music-optimized
+          shopt -s nullglob nocaseglob
+          found=0
+          for f in music/*.mp3 music/*.m4a music/*.aac music/*.ogg music/*.opus music/*.wav music/*.flac; do
+            [ -e "$f" ] || continue
+            found=1
+            base=$(basename "$f")
+            name="${base%.*}"
+            out="music-optimized/$" + "{name}.m4a"
+            if [ -f "$out" ]; then echo "SKIP (already exists): $out"; continue; fi
+            echo "Converting: $f -> $out"
+            ffmpeg -hide_banner -loglevel error -y -i "$f" -vn -map_metadata -1 -c:a aac -b:a 96k -ar 44100 -ac 2 "$out" || echo "FAILED: $f"
+          done
+          if [ "$found" -eq 0 ]; then echo "No music files found in music/"; exit 0; fi
+
+      - name: Remove original files
+        shell: bash
+        run: |
+          shopt -s nullglob nocaseglob
+          for f in music/*.mp3 music/*.m4a music/*.aac music/*.ogg music/*.opus music/*.wav music/*.flac; do [ -e "$f" ] || continue; rm -f "$f"; done
+          touch music/.gitkeep
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add music/ music-optimized/
+          if git diff --cached --quiet; then echo "Nothing to commit"; else git commit -m "Auto-optimize music files"; git push; fi
