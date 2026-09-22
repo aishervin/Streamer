@@ -49,18 +49,20 @@ jobs:
         shell: bash
         run: |
           set -e
-          trap 'echo "Caught signal, exiting..."; pkill -TERM -x ffmpeg 2>/dev/null || true; exit 0' INT TERM
+          trap 'echo "Caught signal, exiting..."; pkill -TERM -x ffmpeg 2>/dev/null || true; wait 2>/dev/null || true; exit 0' INT TERM
           while true; do
             echo "Starting stream..."
-            ffmpeg -hide_banner -loglevel warning \
+            ffmpeg -hide_banner -loglevel info \
               -loop 1 -framerate 2 -i assets/background.jpg \
               -re -stream_loop -1 -f concat -safe 0 -i playlist.txt \
-              -map 0:v -map 1:a \
+              -map 0:v:0 -map 1:a:0 \
               -c:v libx264 -preset ultrafast -tune stillimage \
               -pix_fmt yuv420p -r 2 -g 4 \
               -b:v 80k -maxrate 80k -bufsize 160k \
               -c:a aac -b:a 96k -ar 44100 -ac 2 \
-              -shortest -f flv "$TG_STREAM_URL" || true
+              -f flv "$TG_STREAM_URL"
+            status=$?
+            echo "ffmpeg exited with status $status"
             echo "Stream ended. Reconnecting in 5s..."
             sleep 5
           done
