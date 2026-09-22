@@ -1,0 +1,66 @@
+name: Stream to Telegram
+
+on:
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: "Streaming destination"
+        required: true
+        type: choice
+        options:
+          - channel
+          - group
+        default: channel
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Build playlist
+        run: bash scripts/build_playlist.sh
+
+      - name: Verify playlist
+        run: |
+          if [ ! -s playlist.txt ]; then echo "::error::Playlist is empty. Put music in music-optimized/ first."; exit 1; fi
+          cat playlist.txt
+
+      - name: Select RTMPS destination
+        id: destination
+        shell: bash
+        env:
+          CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL }}
+          TARGET: ${{ inputs.destination }}
+        run: |
+          if [ "$TARGET" = "channel" ]; then STREAM_URL="$CHANNEL_URL"; else STREAM_URL="$GROUP_URL"; fi
+          if [ -z "$STREAM_URL" ]; then echo "::error::Selected RTMPS secret is not configured."; exit 1; fi
+          echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Stream
+        env:
+          TG_STREAM_URL: ${{ steps.destination.outputs.stream_url }}
+        shell: bash
+        run: |
+          set -e
+          trap 'echo "Caught signal, exiting..."; pkill -TERM -x ffmpeg 2>/dev/null || true; exit 0' INT TERM
+          while true; do
+            echo "Starting stream..."
+            ffmpeg -hide_banner -loglevel warning \
+              -loop 1 -framerate 2 -i assets/background.png \
+              -re -stream_loop -1 -f concat -safe 0 -i playlist.txt \
+              -map 0:v -map 1:a \
+              -c:v libx264 -preset ultrafast -tune stillimage \
+              -pix_fmt yuv420p -r 2 -g 4 \
+              -b:v 80k -maxrate 80k -bufsize 160k \
+              -c:a copy \
+              -shortest -f flv "$TG_STREAM_URL" || true
+            echo "Stream ended. Reconnecting in 5s..."
+            sleep 5
+          done
