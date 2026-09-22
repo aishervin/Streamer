@@ -30,3 +30,15 @@ export interface LogEntry {
   text: string;
   type: 'info' | 'warn' | 'error' | 'stream';
 }
+
+export interface WorkflowRun {
+  id: number;
+  name: string;
+  status: 'queued' | 'in_progress' | 'completed';
+  conclusion: string | null;
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+  event: string;
+}
+

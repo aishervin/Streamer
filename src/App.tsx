@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Radio, Music2, Sparkles, Sliders, RefreshCw, AlertTriangle, CheckCircle, Info } from 'lucide-react';
+import { Radio, Music2, Sparkles, Sliders, RefreshCw, AlertTriangle, CheckCircle, Info, GitBranch } from 'lucide-react';
 import { AudioLibrary } from './components/AudioLibrary.tsx';
 import { OptimizedPlaylist } from './components/OptimizedPlaylist.tsx';
 import { BackgroundCard } from './components/BackgroundCard.tsx';
 import { StreamControl } from './components/StreamControl.tsx';
 import { AudioPlayerBar } from './components/AudioPlayerBar.tsx';
+import { GitHubActionsControl } from './components/GitHubActionsControl.tsx';
 import { TrackInfo, StreamStatus, LogEntry } from './types.ts';
 
 export function App() {
@@ -24,6 +25,7 @@ export function App() {
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [engineTab, setEngineTab] = useState<'container' | 'github'>('container');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // In-browser audio player state
@@ -351,16 +353,63 @@ export function App() {
 
       {/* Main Workspace Layout */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+        {/* Stream Engine Selector Tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-zinc-900/50 p-1.5 rounded-xl border border-zinc-800">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setEngineTab('container')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+                engineTab === 'container'
+                  ? 'bg-cyan-500 text-zinc-950 shadow-md'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>Direct Cloud Stream (FFmpeg)</span>
+              {status.isStreaming && (
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              )}
+            </button>
+
+            <button
+              onClick={() => setEngineTab('github')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+                engineTab === 'github'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <GitBranch className="w-3.5 h-3.5" />
+              <span>GitHub Actions Runner (aishervin/Streamer)</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 font-mono">
+                Live
+              </span>
+            </button>
+          </div>
+
+          <div className="text-[11px] text-zinc-400 font-mono px-3">
+            {engineTab === 'container' ? (
+              <span className="text-cyan-400">● Container: Instant direct broadcast</span>
+            ) : (
+              <span className="text-indigo-400">● GitHub Actions: Workflow dispatch</span>
+            )}
+          </div>
+        </div>
+
         {/* Stream Control & Live Terminal */}
         <section id="broadcast-section">
-          <StreamControl
-            status={status}
-            logs={logs}
-            onStartStream={handleStartStream}
-            onStopStream={handleStopStream}
-            onClearLogs={() => setLogs([])}
-            playlistCount={playlistCount}
-          />
+          {engineTab === 'container' ? (
+            <StreamControl
+              status={status}
+              logs={logs}
+              onStartStream={handleStartStream}
+              onStopStream={handleStopStream}
+              onClearLogs={() => setLogs([])}
+              playlistCount={playlistCount}
+            />
+          ) : (
+            <GitHubActionsControl />
+          )}
         </section>
 
         {/* Media & Encoding Management */}

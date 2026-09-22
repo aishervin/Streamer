@@ -707,6 +707,129 @@ app.get('/api/stream/logs', (_req, res) => {
   res.json({ logs: logBuffer });
 });
 
+// ----------------------------------------------------
+// GitHub Actions Integration (aishervin/Streamer)
+// ----------------------------------------------------
+const GITHUB_REPO = 'aishervin/Streamer';
+const GITHUB_TOKEN = process.env.GITHUB_PAT || '';
+
+async function githubFetch(endpoint: string, options: RequestInit = {}) {
+  const url = `https://api.github.com${endpoint}`;
+  return fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${GITHUB_TOKEN}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'DevStudio-Streamer',
+      ...(options.headers || {}),
+    },
+  });
+}
+
+// 16. Get GitHub Actions Workflow Runs
+app.get('/api/github/runs', async (_req, res) => {
+  try {
+    const ghRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/runs?per_page=8`);
+    if (!ghRes.ok) {
+      const errText = await ghRes.text();
+      return res.status(ghRes.status).json({ error: errText });
+    }
+    const data = await ghRes.json();
+    const runs = (data.workflow_runs || []).map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      conclusion: r.conclusion,
+      html_url: r.html_url,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      event: r.event,
+    }));
+    res.json({ runs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 17. Dispatch GitHub Actions Stream Workflow
+app.post('/api/github/dispatch-stream', async (req, res) => {
+  try {
+    const { destination = 'channel' } = req.body || {};
+    appendLog(`[GitHub Actions] Dispatching workflow "stream.yml" (destination: ${destination}) on ${GITHUB_REPO}...`, 'info');
+
+    const ghRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/workflows/stream.yml/dispatches`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ref: 'main',
+        inputs: {
+          destination,
+        },
+      }),
+    });
+
+    if (ghRes.status === 204) {
+      appendLog(`[GitHub Actions] Successfully triggered "Stream to Telegram" workflow on GitHub Actions!`, 'stream');
+      res.json({ success: true, message: 'Workflow dispatched successfully on GitHub Actions' });
+    } else {
+      const err = await ghRes.text();
+      appendLog(`[GitHub Actions] Failed to dispatch workflow: ${err}`, 'error');
+      res.status(ghRes.status).json({ error: err });
+    }
+  } catch (err: any) {
+    appendLog(`[GitHub Actions] Dispatch error: ${err.message}`, 'error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 18. Dispatch GitHub Actions Optimize Workflow
+app.post('/api/github/dispatch-optimize', async (_req, res) => {
+  try {
+    appendLog(`[GitHub Actions] Dispatching workflow "optimize.yml" on ${GITHUB_REPO}...`, 'info');
+
+    const ghRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/workflows/optimize.yml/dispatches`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+
+    if (ghRes.status === 204) {
+      appendLog(`[GitHub Actions] Successfully triggered "Optimize Music" workflow on GitHub Actions!`, 'stream');
+      res.json({ success: true, message: 'Optimize workflow dispatched successfully on GitHub Actions' });
+    } else {
+      const err = await ghRes.text();
+      appendLog(`[GitHub Actions] Failed to dispatch optimize: ${err}`, 'error');
+      res.status(ghRes.status).json({ error: err });
+    }
+  } catch (err: any) {
+    appendLog(`[GitHub Actions] Dispatch error: ${err.message}`, 'error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 19. Cancel a running GitHub Workflow
+app.post('/api/github/cancel/:runId', async (req, res) => {
+  try {
+    const { runId } = req.params;
+    appendLog(`[GitHub Actions] Canceling workflow run #${runId}...`, 'warn');
+
+    const ghRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/runs/${runId}/cancel`, {
+      method: 'POST',
+    });
+
+    if (ghRes.status === 202) {
+      appendLog(`[GitHub Actions] Cancel request accepted for run #${runId}`, 'info');
+      res.json({ success: true });
+    } else {
+      const err = await ghRes.text();
+      res.status(ghRes.status).json({ error: err });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Clean exit handlers
 process.on('SIGINT', () => {
   if (streamState.process) {
