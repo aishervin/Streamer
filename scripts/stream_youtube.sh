@@ -69,15 +69,29 @@ while true; do
           try {
             const key = process.env.YOUTUBE_API_KEY;
             const pid = process.argv[1];
-            const max = parseInt(process.argv[2] || "25", 10);
-            const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=${max}&playlistId=${pid}&key=${key}`);
-            const data = await res.json();
-            if (data.items) {
-              data.items.forEach(it => {
-                const vid = it.snippet?.resourceId?.videoId;
-                if (vid) console.log(vid);
+            const requested = Math.max(1, parseInt(process.argv[2] || "25", 10) || 25);
+            const max = Math.min(requested, 500);
+            let pageToken = "";
+            let collected = 0;
+            do {
+              const params = new URLSearchParams({
+                part: "snippet", maxResults: String(Math.min(50, max - collected)),
+                playlistId: pid, key
               });
-            }
+              if (pageToken) params.set("pageToken", pageToken);
+              const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${params}`);
+              const data = await res.json();
+              if (!res.ok) {
+                console.error("YouTube API error:", data.error?.message || res.status);
+                break;
+              }
+              for (const it of (data.items || [])) {
+                const vid = it.snippet?.resourceId?.videoId;
+                if (vid) { console.log(vid); collected++; }
+                if (collected >= max) break;
+              }
+              pageToken = data.nextPageToken || "";
+            } while (pageToken && collected < max);
           } catch (e) {
             console.error(e.message);
           }
