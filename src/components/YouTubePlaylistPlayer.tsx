@@ -597,24 +597,26 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     }
   };
 
-  // Start Telegram Live Broadcast (streams the user playlist with background)
+  // Start Direct Telegram Live Broadcast (streams the YouTube video/playlist directly with yt-dlp + FFmpeg)
   const handleStartRelay = async () => {
     setIsRelaying(true);
     setRelayMessage(null);
     try {
+      const targetYouTube = currentPlaylistId || inputUrl || 'PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj';
       const res = await fetch('/api/stream/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           destination,
           customUrl: destination === 'custom' ? customRtmp : undefined,
-          sourceType: 'playlist',
+          sourceType: 'youtube',
+          youtubeUrl: targetYouTube,
           quality: relayQuality,
         }),
       });
       const data = await res.json();
       if (res.ok) {
-        setRelayMessage('استریم پلی‌لیست صوتی شما به صورت ۲۴/۷ روی تلگرام آغاز شد.');
+        setRelayMessage('استریم تصویری و مستقیم یوتیوب روی تلگرام با موفقیت آغاز شد! ویدیوها با تصویر متحرک و صدای کامل در حال ارسال هستند.');
         if (onRefreshStatus) onRefreshStatus();
       } else {
         setRelayMessage(data.error || 'خطا در برقراری استریم تلگرام');
@@ -1193,23 +1195,42 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
           </div>
 
           {/* Telegram Live Broadcast Relay Box */}
-          <div className="bg-zinc-900/90 rounded-2xl border border-zinc-800 p-4 shadow-xl space-y-3">
+          <div className="bg-zinc-900/90 rounded-2xl border border-zinc-800 p-4 shadow-xl space-y-3.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Radio className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-bold text-white">استریم زنده تلگرام (پلی‌لیست صوتی + کاور)</span>
+                <Radio className="w-4 h-4 text-red-500" />
+                <span className="text-xs font-bold text-white">استریم زنده ویدیویی یوتیوب روی تلگرام</span>
               </div>
               {streamStatus.isStreaming ? (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 animate-pulse">
-                  در حال پخش زنده
+                  ● در حال پخش زنده
                 </span>
               ) : (
                 <span className="text-[10px] text-zinc-500 font-mono">آماده استریم</span>
               )}
             </div>
 
-            <p className="text-[11px] text-zinc-400">
-              استریم مداوم آهنگ‌های بهینه‌شده به همراه تصویر ثابت کاور به کانال یا گروه تلگرام شما.
+            {streamStatus.isStreaming && (
+              <div className="p-2.5 rounded-xl bg-red-950/30 border border-red-500/30 text-xs space-y-1">
+                <div className="flex items-center justify-between text-zinc-300">
+                  <span className="text-zinc-400">منبع فعال:</span>
+                  <span className="font-bold text-red-300 font-mono">{streamStatus.sourceType?.toUpperCase()}</span>
+                </div>
+                {streamStatus.currentPlayingTitle && (
+                  <div className="flex items-center justify-between text-zinc-300">
+                    <span className="text-zinc-400">ترک زنده:</span>
+                    <span className="font-semibold text-white truncate max-w-[200px]">{streamStatus.currentPlayingTitle}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-zinc-300 text-[11px]">
+                  <span className="text-zinc-400">کیفیت:</span>
+                  <span className="font-bold text-amber-300 font-mono">{streamStatus.quality || relayQuality}</span>
+                </div>
+              </div>
+            )}
+
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              ویدیوها و آهنگ‌های این پلی‌لیست با تصویر زنده، متحرک و صدای باکیفیت بدون نیاز به هیچ‌گونه لاگین مستقیماً روی تلگرام استریم می‌شوند.
             </p>
 
             <div className="grid grid-cols-3 gap-1.5">
@@ -1218,9 +1239,9 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                   key={q}
                   type="button"
                   onClick={() => setRelayQuality(q)}
-                  className={`py-1.5 rounded-lg text-xs font-mono font-bold transition ${
+                  className={`py-1.5 rounded-lg text-xs font-mono font-bold transition cursor-pointer ${
                     relayQuality === q
-                      ? 'bg-cyan-500 text-zinc-950 shadow-md'
+                      ? 'bg-red-600 text-white shadow-md'
                       : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
@@ -1229,24 +1250,34 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
               ))}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="space-y-2">
               <select
                 value={destination}
                 onChange={e => setDestination(e.target.value as any)}
-                className="flex-1 py-2 px-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none"
+                className="w-full py-2 px-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 focus:outline-none"
               >
                 <option value="channel">کانال تلگرام (CSTREAM_RTMPS_URL)</option>
                 <option value="group">گروه تلگرام (GSTREAM_RTMPS_URL)</option>
                 <option value="custom">آدرس RTMP دلخواه</option>
               </select>
 
+              {destination === 'custom' && (
+                <input
+                  type="text"
+                  value={customRtmp}
+                  onChange={e => setCustomRtmp(e.target.value)}
+                  placeholder="rtmps://dc4-1.rtmp.t.me/s/..."
+                  className="w-full py-1.5 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 font-mono dir-ltr"
+                />
+              )}
+
               {streamStatus.isStreaming ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={handleStopRelay}
                     disabled={isRelaying}
-                    className="flex-1 py-2 px-3 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-600/30 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-600/30 transition flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {isRelaying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5 fill-current" />}
                     <span>توقف پخش زنده</span>
@@ -1257,49 +1288,53 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                     onClick={handleResetRelay}
                     disabled={isRelaying}
                     title="ریست کامل پروسه‌های استریم"
-                    className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition cursor-pointer"
+                    className="p-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition cursor-pointer shrink-0"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="space-y-2 pt-1">
+                  {/* Primary Direct Stream Button */}
                   <button
                     type="button"
-                    onClick={handleStartGitHubStream}
+                    onClick={handleStartRelay}
                     disabled={isRelaying}
-                    className="w-full flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold shadow-lg shadow-red-600/25 transition flex items-center justify-center gap-2 cursor-pointer"
-                    title="استریم تصویری یوتیوب با سرورهای ابری گیت‌هاب (تصویر متحرک و صدای کامل)"
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold shadow-lg shadow-red-600/30 transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                    title="استریم مستقیم و فوری همین پلی‌لیست روی تلگرام با انکودر سرور"
                   >
-                    {isRelaying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-                    <span>شروع استریم تصویری یوتیوب (GitHub Actions)</span>
+                    {isRelaying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
+                    <span>شروع استریم مستقیم این پلی‌لیست روی تلگرام</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleResetRelay}
-                    disabled={isRelaying}
-                    title="ریست سرور استریم"
-                    className="p-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 transition cursor-pointer shrink-0"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
+                  {/* Secondary GitHub Actions Button */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleStartGitHubStream}
+                      disabled={isRelaying}
+                      className="flex-1 py-2 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      title="اجرا بر روی سرورهای ابری گیت‌هاب (GitHub Actions)"
+                    >
+                      <span>یا استریم روی سرورهای ابری گیت‌هاب (GitHub Actions)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResetRelay}
+                      disabled={isRelaying}
+                      title="ریست سرور استریم"
+                      className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 transition cursor-pointer shrink-0"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
 
-            {destination === 'custom' && (
-              <input
-                type="text"
-                value={customRtmp}
-                onChange={e => setCustomRtmp(e.target.value)}
-                placeholder="rtmps://dc4-1.rtmp.t.me/s/..."
-                className="w-full py-1.5 px-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 font-mono dir-ltr"
-              />
-            )}
-
             {relayMessage && (
-              <div className="p-2 rounded-lg bg-zinc-950 text-[11px] text-cyan-300 border border-cyan-500/30">
+              <div className="p-2.5 rounded-lg bg-zinc-950 text-xs text-cyan-300 border border-cyan-500/30">
                 {relayMessage}
               </div>
             )}
