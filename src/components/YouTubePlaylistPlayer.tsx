@@ -553,6 +553,39 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     }
   };
 
+  // Start GitHub Actions YouTube Stream (Full Video & Audio)
+  const handleStartGitHubStream = async () => {
+    setIsRelaying(true);
+    setRelayMessage(null);
+    try {
+      const targetUrl = currentPlaylistId.startsWith('http')
+        ? currentPlaylistId
+        : `https://www.youtube.com/playlist?list=${currentPlaylistId}`;
+
+      const res = await fetch('/api/github/dispatch-youtube-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playlistUrl: targetUrl,
+          destination,
+          quality: relayQuality,
+          maxVideos: 25,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRelayMessage('استریم ویدیویی یوتیوب روی سرورهای ابری GitHub Actions لانچ شد! ویدیوها با تصویر متحرک واقعی به تلگرام استریم می‌شوند.');
+        if (onRefreshStatus) onRefreshStatus();
+      } else {
+        setRelayMessage(data.error || 'خطا در فعال‌سازی استریم گیت‌هاب');
+      }
+    } catch (err: any) {
+      setRelayMessage(err.message || 'خطا در ارسال درخواست به سرور');
+    } finally {
+      setIsRelaying(false);
+    }
+  };
+
   // Start Telegram Live Broadcast (streams the user playlist with background)
   const handleStartRelay = async () => {
     setIsRelaying(true);
@@ -1219,15 +1252,26 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleStartGitHubStream}
+                    disabled={isRelaying}
+                    className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold shadow-lg shadow-red-600/25 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="استریم با سرورهای ابری گیت‌هاب اکشنز (تصویر متحرک و ویدیوی واقعی یوتیوب)"
+                  >
+                    {isRelaying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                    <span>استریم ویدیویی در GitHub</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={handleStartRelay}
                     disabled={isRelaying}
-                    className="flex-1 py-2 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-zinc-950 text-xs font-bold shadow-lg shadow-cyan-500/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     {isRelaying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    <span>شروع استریم به تلگرام</span>
+                    <span>استریم صوتی لوکال</span>
                   </button>
 
                   <button
@@ -1235,7 +1279,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                     onClick={handleResetRelay}
                     disabled={isRelaying}
                     title="ریست سرور استریم"
-                    className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 transition cursor-pointer"
+                    className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 transition cursor-pointer shrink-0"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
