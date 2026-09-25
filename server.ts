@@ -1391,6 +1391,53 @@ app.post('/api/github/set-cookie', async (req, res) => {
   }
 });
 
+// 21. Update GitHub Secret YOUTUBE_OAUTH_TOKEN
+app.post('/api/github/set-oauth-token', async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'token is required' });
+    }
+
+    // 1. Get repo public key for secret encryption
+    const keyRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/secrets/public-key`);
+    if (!keyRes.ok) {
+      const err = await keyRes.text();
+      return res.status(keyRes.status).json({ error: `Failed to get public key: ${err}` });
+    }
+    const { key_id, key } = await keyRes.json();
+
+    // 2. Encrypt token with libsodium
+    const sodium = (await import('libsodium-wrappers')).default;
+    await sodium.ready;
+    const binkey = sodium.from_base64(key, sodium.base64_variants.ORIGINAL);
+    const binsec = sodium.from_string(token.trim());
+    const encBytes = sodium.crypto_box_seal(binsec, binkey);
+    const encrypted_value = sodium.to_base64(encBytes, sodium.base64_variants.ORIGINAL);
+
+    // 3. Put secret YOUTUBE_OAUTH_TOKEN
+    const putRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/secrets/YOUTUBE_OAUTH_TOKEN`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        encrypted_value,
+        key_id,
+      }),
+    });
+
+    if (putRes.ok || putRes.status === 201 || putRes.status === 204) {
+      appendLog('[GitHub Actions] YOUTUBE_OAUTH_TOKEN successfully encrypted and saved to GitHub Secrets!', 'info');
+      res.json({ success: true, message: 'توکن دسترسی یوتیوب با موفقیت در سکرت‌های گیت‌هاب ذخیره شد!' });
+    } else {
+      const err = await putRes.text();
+      res.status(putRes.status).json({ error: `Failed to set secret: ${err}` });
+    }
+  } catch (err: any) {
+    appendLog(`[GitHub Actions] Secret encryption error: ${err.message}`, 'error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Clean exit handlers
 process.on('SIGINT', () => {
   if (streamState.process) {
