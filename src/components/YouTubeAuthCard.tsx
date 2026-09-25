@@ -12,20 +12,25 @@ import {
   ShieldCheck,
   Play,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
+  CheckCircle2,
+  Search,
+  Lock
 } from 'lucide-react';
+import {
+  initAuth,
+  googleSignIn,
+  googleSignOut,
+  getCachedAccessToken,
+  setCachedAccessToken
+} from '../services/googleAuth.ts';
 
 const YouTubeIcon = ({ className = 'w-5 h-5' }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
   </svg>
 );
-import {
-  initAuth,
-  googleSignIn,
-  googleSignOut,
-  getCachedAccessToken
-} from '../services/googleAuth.ts';
 
 interface YouTubePlaylist {
   id: string;
@@ -41,6 +46,14 @@ interface YouTubeChannel {
   subscriberCount?: string;
   videoCount?: string;
   avatar: string;
+}
+
+interface TokenInspection {
+  email?: string;
+  scope?: string;
+  expiresIn?: string;
+  hasYouTubeScope: boolean;
+  isValid: boolean;
 }
 
 interface YouTubeAuthCardProps {
@@ -59,11 +72,17 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
   const [playlists, setPlaylists] = useState<YouTubePlaylist[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
+  // Manual token inspector input
+  const [manualTokenInput, setManualTokenInput] = useState<string>('');
+  const [inspection, setInspection] = useState<TokenInspection | null>(null);
+  const [isInspecting, setIsInspecting] = useState(false);
+
   useEffect(() => {
     const unsubscribe = initAuth(
       (currentUser, currentToken) => {
         setUser(currentUser);
         setToken(currentToken);
+        inspectTokenDetails(currentToken);
         fetchYouTubeData(currentToken);
       },
       () => {
@@ -71,12 +90,14 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
         setToken(null);
         setChannel(null);
         setPlaylists([]);
+        setInspection(null);
       }
     );
 
     const existingToken = getCachedAccessToken();
     if (existingToken) {
       setToken(existingToken);
+      inspectTokenDetails(existingToken);
       fetchYouTubeData(existingToken);
     }
 
@@ -84,6 +105,38 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
       unsubscribe();
     };
   }, []);
+
+  const inspectTokenDetails = async (tok: string): Promise<TokenInspection | null> => {
+    setIsInspecting(true);
+    try {
+      const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${tok.trim()}`);
+      if (res.ok) {
+        const data = await res.json();
+        const scopes = data.scope || '';
+        const hasYouTubeScope = scopes.toLowerCase().includes('youtube');
+        const info: TokenInspection = {
+          email: data.email,
+          scope: scopes,
+          expiresIn: data.expires_in,
+          hasYouTubeScope,
+          isValid: true,
+        };
+        setInspection(info);
+        return info;
+      } else {
+        const errInfo: TokenInspection = {
+          hasYouTubeScope: false,
+          isValid: false,
+        };
+        setInspection(errInfo);
+        return errInfo;
+      }
+    } catch {
+      return null;
+    } finally {
+      setIsInspecting(false);
+    }
+  };
 
   const fetchYouTubeData = async (accessToken: string) => {
     setIsLoadingData(true);
@@ -140,7 +193,8 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
       const { user: signedInUser, accessToken } = await googleSignIn();
       setUser(signedInUser);
       setToken(accessToken);
-      if (showToast) showToast(`خوش آمدید، ${signedInUser.displayName || 'کاربر گرامی'}!`, 'success');
+      if (showToast) showToast(`ورود موفق: ${signedInUser.displayName || signedInUser.email}!`, 'success');
+      await inspectTokenDetails(accessToken);
       await fetchYouTubeData(accessToken);
     } catch (err: any) {
       if (showToast) showToast(err.message || 'خطا در ورود به حساب گوگل', 'error');
@@ -156,7 +210,8 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
       setToken(null);
       setChannel(null);
       setPlaylists([]);
-      if (showToast) showToast('با موفقیت از حساب گوگل خارج شدید', 'info');
+      setInspection(null);
+      if (showToast) showToast('با موفقیت از حساب خارج شدید', 'info');
     } catch (err: any) {
       if (showToast) showToast(err.message || 'خطا در خروج', 'error');
     }
@@ -170,6 +225,20 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const handleApplyManualToken = async () => {
+    if (!manualTokenInput.trim()) return;
+    const clean = manualTokenInput.trim();
+    const info = await inspectTokenDetails(clean);
+    if (info && info.isValid) {
+      setToken(clean);
+      setCachedAccessToken(clean);
+      if (showToast) showToast(`توکن معتبر برای ${info.email || 'کاربر'} تایید شد`, 'success');
+      await fetchYouTubeData(clean);
+    } else {
+      if (showToast) showToast('توکن وارد شده معتبر نیست یا منقضی شده است', 'error');
+    }
+  };
+
   return (
     <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-6 backdrop-blur-sm space-y-6">
       {/* Header Banner */}
@@ -181,9 +250,9 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
           <div>
             <h2 className="text-base font-bold text-zinc-100 flex items-center gap-2">
               <span>ورود با حساب گوگل و یوتیوب (Google OAuth)</span>
-              {user ? (
+              {token ? (
                 <span className="flex items-center gap-1 text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                  <ShieldCheck className="w-3 h-3" /> متصل شد
+                  <ShieldCheck className="w-3 h-3" /> متصل
                 </span>
               ) : (
                 <span className="text-[11px] font-medium bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full border border-zinc-700">
@@ -199,10 +268,10 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
 
         {/* User Status / Action Button */}
         <div>
-          {user ? (
+          {user || token ? (
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2.5 bg-zinc-800/60 border border-zinc-700/80 px-3 py-1.5 rounded-xl">
-                {user.photoURL ? (
+                {user?.photoURL ? (
                   <img
                     src={user.photoURL}
                     alt={user.displayName || 'Google Avatar'}
@@ -210,15 +279,15 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
                   />
                 ) : (
                   <div className="w-7 h-7 rounded-full bg-red-600 text-white flex items-center justify-center text-xs font-bold">
-                    {(user.displayName || user.email || 'U')[0].toUpperCase()}
+                    {(user?.displayName || inspection?.email || 'U')[0].toUpperCase()}
                   </div>
                 )}
                 <div className="text-right">
                   <div className="text-xs font-semibold text-zinc-200">
-                    {user.displayName || 'کاربر یوتیوب'}
+                    {user?.displayName || inspection?.email || 'کاربر متصل'}
                   </div>
                   <div className="text-[10px] text-zinc-400 font-mono">
-                    {user.email}
+                    {inspection?.email || user?.email || 'OAuth Token Active'}
                   </div>
                 </div>
               </div>
@@ -253,18 +322,43 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
         </div>
       </div>
 
+      {/* Scope Warning if token lacks YouTube scope */}
+      {token && inspection && !inspection.hasYouTubeScope && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3 text-amber-200">
+          <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="space-y-1.5 text-xs">
+            <div className="font-bold text-amber-300">
+              دسترسی به یوتیوب (YouTube Permission) در این توکن فعال نشده است:
+            </div>
+            <p className="leading-relaxed text-zinc-300">
+              توکن شما برای ایمیل <b className="text-white font-mono">{inspection.email || 'اکانت شما'}</b> معتبر است، اما در صفحه اجازه گوگل، تیک دسترسی یوتیوب ثبت نشده است. برای حل این موضوع، کافیست روی دکمه زیر کلیک کرده و در پنجره گوگل به <b>Streamer</b> اجازه دسترسی به یوتیوب را تایید کنید.
+            </p>
+            <div className="pt-1">
+              <button
+                onClick={handleSignIn}
+                disabled={isSigningIn}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1.5 shadow transition active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>ورود مجدد با تایید دسترسی یوتیوب</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
-      {!user ? (
-        <div className="bg-zinc-950/60 border border-dashed border-zinc-800 rounded-xl p-8 text-center space-y-4">
+      {!token ? (
+        <div className="bg-zinc-950/60 border border-dashed border-zinc-800 rounded-xl p-8 text-center space-y-5">
           <div className="w-14 h-14 mx-auto rounded-full bg-red-600/10 border border-red-500/20 flex items-center justify-center text-red-400">
             <Key className="w-7 h-7" />
           </div>
           <div className="max-w-md mx-auto space-y-2">
             <h3 className="text-sm font-semibold text-zinc-200">
-              هنوز با حساب گوگل خود وارد نشده‌اید
+              ورود سریع با حساب گوگل یا وارد کردن دستی توکن
             </h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              با زدن دکمه <b>ورود با حساب گوگل</b>، پنجره امن گوگل باز شده و اکانت خود را انتخاب می‌کنید. بلافاصله توکن رسمی دسترسی یوتیوب به همراه پلی‌لیست‌های شخصی‌تان در این صفحه نمایش داده خواهد شد.
+              با زدن دکمه <b>ورود با حساب گوگل</b>، پنجره رسمی گوگل باز شده و پس از انتخاب اکانت، توکن دسترسی یوتیوب و پلی‌لیست‌های شما به صورت خودکار واکشی می‌شود.
             </p>
           </div>
           <button
@@ -272,8 +366,32 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
             disabled={isSigningIn}
             className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold shadow-lg shadow-red-600/20 transition active:scale-95 cursor-pointer disabled:opacity-50"
           >
-            {isSigningIn ? 'در حال ارتباط با گوگل...' : 'همین حالا با اکانت گوگل وارد شوید'}
+            {isSigningIn ? 'در حال ارتباط با گوگل...' : 'ورود مستقیم با اکانت گوگل'}
           </button>
+
+          {/* Quick Paste Divider */}
+          <div className="pt-4 border-t border-zinc-800/80 max-w-lg mx-auto">
+            <div className="flex items-center gap-2 mb-2 text-right">
+              <Lock className="w-3.5 h-3.5 text-zinc-400" />
+              <span className="text-xs font-semibold text-zinc-300">یا اگر توکن را دارید، اینجا پیست کنید:</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="ya29.a0AX07Cms..."
+                value={manualTokenInput}
+                onChange={(e) => setManualTokenInput(e.target.value)}
+                className="flex-1 bg-zinc-900 border border-zinc-700 px-3 py-2 rounded-xl text-xs font-mono text-zinc-200 focus:outline-none focus:border-red-500"
+              />
+              <button
+                onClick={handleApplyManualToken}
+                disabled={!manualTokenInput.trim() || isInspecting}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold rounded-xl transition cursor-pointer disabled:opacity-50"
+              >
+                {isInspecting ? 'بررسی...' : 'اعمال و بررسی'}
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="space-y-6">
@@ -282,9 +400,9 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold text-zinc-200">
                 <Key className="w-4 h-4 text-amber-400" />
-                <span>توکن دسترسی یوتیوب (OAuth Access Token)</span>
+                <span>توکن فعال دسترسی یوتیوب (OAuth Access Token)</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded">
-                  Bearer Token
+                  Bearer
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -316,10 +434,33 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
               )}
             </div>
 
-            <p className="text-[11px] text-zinc-500 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-zinc-400" />
-              این توکن به صورت استاندارد در حافظه برنامه کش شده و می‌توانید از آن برای واکشی ویدیوها و درخواست‌های API با احراز هویت استفاده کنید.
-            </p>
+            {/* Token details / scope inspect info */}
+            {inspection && (
+              <div className="bg-zinc-900/60 border border-zinc-800 rounded-lg p-2.5 text-[11px] text-zinc-400 flex flex-wrap items-center justify-between gap-2 font-mono">
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-500">ایمیل متصل:</span>
+                  <span className="text-zinc-200 font-bold">{inspection.email || 'نامشخص'}</span>
+                </div>
+                {inspection.expiresIn && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500">زمان اعتبار باقی‌مانده:</span>
+                    <span className="text-amber-300">{Math.round(Number(inspection.expiresIn) / 60)} دقیقه</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-1">
+                  <span className="text-zinc-500">دسترسی یوتیوب:</span>
+                  {inspection.hasYouTubeScope ? (
+                    <span className="text-emerald-400 font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> مجاز
+                    </span>
+                  ) : (
+                    <span className="text-red-400 font-bold flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" /> نامجاز
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* YouTube Channel Stats (if available) */}
