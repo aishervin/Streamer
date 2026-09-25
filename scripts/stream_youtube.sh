@@ -18,6 +18,20 @@ echo "Max videos: $MAX_VIDEOS"
 echo "Quality: $QUALITY"
 echo "========================================="
 
+# Setup cookies if provided in environment
+COOKIE_ARGS=()
+if [ -n "$YOUTUBE_COOKIES" ]; then
+  echo "Found YOUTUBE_COOKIES secret, decoding..."
+  echo "$YOUTUBE_COOKIES" | base64 -d > /tmp/youtube_cookies.txt 2>/dev/null || echo "$YOUTUBE_COOKIES" > /tmp/youtube_cookies.txt
+  if [ -s /tmp/youtube_cookies.txt ]; then
+    COOKIE_ARGS=("--cookies" "/tmp/youtube_cookies.txt")
+    echo "Cookies configured for yt-dlp authentication."
+  fi
+elif [ -f "cookies.txt" ]; then
+  COOKIE_ARGS=("--cookies" "cookies.txt")
+  echo "Found local cookies.txt file."
+fi
+
 # Determine resolution parameters
 if [ "$QUALITY" = "1080p" ]; then
   SCALE="1920:1080"
@@ -48,7 +62,7 @@ while true; do
     if [ -n "$line" ]; then
       VIDEO_IDS+=("$line")
     fi
-  done < <(yt-dlp --flat-playlist --print id "$PLAYLIST_URL" 2>/dev/null | head -n "$MAX_VIDEOS" || true)
+  done < <(yt-dlp "${COOKIE_ARGS[@]}" --flat-playlist --print id "$PLAYLIST_URL" 2>/dev/null | head -n "$MAX_VIDEOS" || true)
 
   if [ ${#VIDEO_IDS[@]} -eq 0 ]; then
     echo "Could not fetch playlist videos with yt-dlp, attempting single video or fallback..."
@@ -74,7 +88,8 @@ while true; do
     rm -f current_clip.*
 
     echo "Downloading video clip with audio..."
-    if ! yt-dlp -f "best[height<=$MAX_H][ext=mp4]/bestvideo[height<=$MAX_H]+bestaudio/best[height<=$MAX_H]/best" \
+    if ! yt-dlp "${COOKIE_ARGS[@]}" \
+      -f "best[height<=$MAX_H][ext=mp4]/bestvideo[height<=$MAX_H]+bestaudio/best[height<=$MAX_H]/best" \
       --extractor-args "youtube:player_client=ios,android,web" \
       --no-warnings --no-playlist \
       -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
