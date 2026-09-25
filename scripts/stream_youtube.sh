@@ -58,11 +58,49 @@ trap 'echo "Signal received, stopping stream..."; pkill -TERM -x ffmpeg 2>/dev/n
 while true; do
   echo "Fetching video list from playlist..."
   VIDEO_IDS=()
-  while IFS= read -r line; do
-    if [ -n "$line" ]; then
-      VIDEO_IDS+=("$line")
+
+  # Check if official YouTube Data API v3 key is provided
+  if [ -n "$YOUTUBE_API_KEY" ]; then
+    echo "Using official YouTube Data API v3 key for playlist extraction..."
+    PLAYLIST_ID=$(echo "$PLAYLIST_URL" | grep -oE "list=([a-zA-Z0-9_-]+)" | cut -d= -f2 || true)
+    if [ -n "$PLAYLIST_ID" ]; then
+      NODE_VIDS=$(node -e '
+        async function fetchVideos() {
+          try {
+            const key = process.env.YOUTUBE_API_KEY;
+            const pid = process.argv[1];
+            const max = parseInt(process.argv[2] || "25", 10);
+            const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=${max}&playlistId=${pid}&key=${key}`);
+            const data = await res.json();
+            if (data.items) {
+              data.items.forEach(it => {
+                const vid = it.snippet?.resourceId?.videoId;
+                if (vid) console.log(vid);
+              });
+            }
+          } catch (e) {
+            console.error(e.message);
+          }
+        }
+        fetchVideos();
+      ' "$PLAYLIST_ID" "$MAX_VIDEOS" 2>/dev/null || true)
+
+      while IFS= read -r line; do
+        if [ -n "$line" ]; then
+          VIDEO_IDS+=("$line")
+        fi
+      done <<< "$NODE_VIDS"
     fi
-  done < <(yt-dlp "${COOKIE_ARGS[@]}" --flat-playlist --print id "$PLAYLIST_URL" 2>/dev/null | head -n "$MAX_VIDEOS" || true)
+  fi
+
+  # Fallback to yt-dlp flat-playlist if API key not available or returned empty
+  if [ ${#VIDEO_IDS[@]} -eq 0 ]; then
+    while IFS= read -r line; do
+      if [ -n "$line" ]; then
+        VIDEO_IDS+=("$line")
+      fi
+    done < <(yt-dlp "${COOKIE_ARGS[@]}" --flat-playlist --print id "$PLAYLIST_URL" 2>/dev/null | head -n "$MAX_VIDEOS" || true)
+  fi
 
   if [ ${#VIDEO_IDS[@]} -eq 0 ]; then
     echo "Could not fetch playlist videos with yt-dlp, attempting single video or fallback..."
