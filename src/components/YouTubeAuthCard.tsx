@@ -16,7 +16,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Search,
-  Lock
+  Lock,
+  GitBranch
 } from 'lucide-react';
 import {
   initAuth,
@@ -76,6 +77,8 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
   const [manualTokenInput, setManualTokenInput] = useState<string>('');
   const [inspection, setInspection] = useState<TokenInspection | null>(null);
   const [isInspecting, setIsInspecting] = useState(false);
+  const [isSavingToGithub, setIsSavingToGithub] = useState(false);
+  const [savedToGithub, setSavedToGithub] = useState(false);
 
   useEffect(() => {
     const unsubscribe = initAuth(
@@ -223,6 +226,30 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
     setCopied(true);
     if (showToast) showToast('توکن OAuth یوتیوب در کلیپ‌بورد کپی شد', 'success');
     setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleSaveToGitHub = async () => {
+    if (!token) return;
+    setIsSavingToGithub(true);
+    try {
+      const res = await fetch('/api/github/set-oauth-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSavedToGithub(true);
+        if (showToast) showToast('توکن یوتیوب با موفقیت در سکرت‌های گیت‌هاب اکشنز ذخیره شد!', 'success');
+        setTimeout(() => setSavedToGithub(false), 3000);
+      } else {
+        if (showToast) showToast(data.error || 'خطا در ذخیره توکن در گیت‌هاب', 'error');
+      }
+    } catch (err: any) {
+      if (showToast) showToast(err.message || 'خطا در ارتباط با سرور', 'error');
+    } finally {
+      setIsSavingToGithub(false);
+    }
   };
 
   const handleApplyManualToken = async () => {
@@ -419,6 +446,15 @@ export function YouTubeAuthCard({ onSelectPlaylist, showToast }: YouTubeAuthCard
                 >
                   {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copied ? 'کپی شد!' : 'کپی توکن'}</span>
+                </button>
+                <button
+                  onClick={handleSaveToGitHub}
+                  disabled={isSavingToGithub}
+                  className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                  title="ذخیره مستقیم در GitHub Secrets برای استفاده در استریم خودکار"
+                >
+                  {savedToGithub ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <GitBranch className="w-3.5 h-3.5" />}
+                  <span>{isSavingToGithub ? 'در حال رمزنگاری...' : savedToGithub ? 'در گیت‌هاب ذخیره شد!' : 'ذخیره در GitHub Secrets'}</span>
                 </button>
               </div>
             </div>
