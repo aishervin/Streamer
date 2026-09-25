@@ -41,6 +41,7 @@ declare global {
 interface YouTubePlaylistPlayerProps {
   streamStatus: StreamStatus;
   onRefreshStatus?: () => void;
+  externalPlaylistId?: string | null;
 }
 
 const YouTubeIcon = ({ className = 'w-5 h-5' }: { className?: string }) => (
@@ -124,6 +125,7 @@ const DEFAULT_PRESETS: PresetPlaylist[] = [
 export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   streamStatus,
   onRefreshStatus,
+  externalPlaylistId,
 }) => {
   // Input and active playlist
   const [inputUrl, setInputUrl] = useState<string>('');
@@ -218,6 +220,14 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
       setIsLoadingMetadata(false);
     }
   }, []);
+
+  // Sync external playlist selection (e.g. from YouTube OAuth tab)
+  useEffect(() => {
+    if (externalPlaylistId) {
+      setInputUrl(externalPlaylistId);
+      fetchPlaylistDetails(externalPlaylistId);
+    }
+  }, [externalPlaylistId, fetchPlaylistDetails]);
 
   // Initialize or update YouTube Player
   const initPlayer = useCallback((playlistId: string, type: 'playlist' | 'video', initialVideoId?: string) => {
