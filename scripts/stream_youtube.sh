@@ -68,18 +68,24 @@ while true; do
         async function fetchVideos() {
           try {
             const key = process.env.YOUTUBE_API_KEY;
+            const oauthToken = process.env.YOUTUBE_OAUTH_TOKEN;
             const pid = process.argv[1];
             const requested = Math.max(1, parseInt(process.argv[2] || "25", 10) || 25);
             const max = Math.min(requested, 500);
             let pageToken = "";
             let collected = 0;
+            const headers = {};
+            if (oauthToken) {
+              headers["Authorization"] = `Bearer ${oauthToken}`;
+            }
             do {
               const params = new URLSearchParams({
                 part: "snippet", maxResults: String(Math.min(50, max - collected)),
-                playlistId: pid, key
+                playlistId: pid
               });
+              if (key && !oauthToken) params.set("key", key);
               if (pageToken) params.set("pageToken", pageToken);
-              const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${params}`);
+              const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${params}`, { headers });
               const data = await res.json();
               if (!res.ok) {
                 console.error("YouTube API error:", data.error?.message || res.status);
