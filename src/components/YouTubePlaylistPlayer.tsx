@@ -129,6 +129,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   const [inputUrl, setInputUrl] = useState<string>('');
   const [currentPlaylistId, setCurrentPlaylistId] = useState<string>('PLDIoUOhQQPlXr63I_vwF9GD8sAKh77dWU');
   const [currentType, setCurrentType] = useState<'playlist' | 'video'>('playlist');
+  const [activeVideoId, setActiveVideoId] = useState<string>('');
   const [playlistData, setPlaylistData] = useState<YouTubePlaylistData | null>(null);
   const [isLoadingMetadata, setIsLoadingMetadata] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -185,6 +186,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   useEffect(() => {
     if (!window.YT) {
       const tag = document.createElement('script');
+      tag.id = 'yt-iframe-api-script';
       tag.src = 'https://www.youtube.com/iframe_api';
       const firstScriptTag = document.getElementsByTagName('script')[0];
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
@@ -205,6 +207,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
         if (data.items && data.items.length > 0) {
           setCurrentTrackTitle(data.items[0].title);
           setCurrentTrackAuthor(data.items[0].author);
+          setActiveVideoId(data.items[0].id);
         }
       } else {
         setErrorMessage(data.error || 'پلی‌لیست یافت نشد. شناسه یا لینک را بررسی کنید.');
@@ -217,72 +220,85 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   }, []);
 
   // Initialize or update YouTube Player
-  const initPlayer = useCallback((playlistId: string, type: 'playlist' | 'video') => {
+  const initPlayer = useCallback((playlistId: string, type: 'playlist' | 'video', initialVideoId?: string) => {
     if (!window.YT || !window.YT.Player) {
-      // Retry in 300ms if script is still downloading
-      setTimeout(() => initPlayer(playlistId, type), 300);
+      setTimeout(() => initPlayer(playlistId, type, initialVideoId), 250);
       return;
     }
 
-    if (playerRef.current) {
-      // Player already exists, load new playlist/video
+    const container = playerContainerRef.current;
+    if (!container) return;
+
+    const vId = initialVideoId || activeVideoId;
+
+    // If player already exists and healthy, reuse loadVideoById or loadPlaylist
+    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
       try {
-        if (type === 'playlist') {
+        if (vId) {
+          playerRef.current.loadVideoById({
+            videoId: vId,
+            suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
+          });
+          playerRef.current.playVideo();
+          setIsPlaying(true);
+          return;
+        } else if (type === 'playlist') {
           playerRef.current.loadPlaylist({
             list: playlistId,
             listType: 'playlist',
             index: 0,
             suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
           });
-        } else {
-          playerRef.current.loadVideoById({
-            videoId: playlistId,
-            suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
-          });
+          playerRef.current.playVideo();
+          setIsPlaying(true);
+          return;
         }
-        playerRef.current.setLoop(isLooping);
-        playerRef.current.setVolume(volume);
-        if (isMuted) playerRef.current.mute();
-        else playerRef.current.unMute();
-        setIsPlaying(true);
-        return;
       } catch (e) {
         console.warn('Failed to reuse player, recreating...', e);
       }
     }
 
-    // Create fresh player
-    const playerEl = document.getElementById('yt-iframe-slot');
-    if (!playerEl) return;
+    // Clean container and create fresh target div
+    container.innerHTML = '<div id="yt-player-target" style="width:100%;height:100%"></div>';
 
-    playerRef.current = new window.YT.Player('yt-iframe-slot', {
+    const playerVarsConfig: any = {
+      autoplay: 1,
+      controls: 1,
+      rel: 0,
+      modestbranding: 1,
+      enablejsapi: 1,
+      fs: 1,
+      playsinline: 1,
+      origin: window.location.origin,
+    };
+
+    if (type === 'playlist') {
+      playerVarsConfig.list = playlistId;
+      playerVarsConfig.listType = 'playlist';
+    }
+
+    const playerConfig: any = {
       width: '100%',
       height: '100%',
-      playerVars: {
-        listType: type === 'playlist' ? 'playlist' : undefined,
-        list: type === 'playlist' ? playlistId : undefined,
-        autoplay: 1,
-        controls: 1,
-        rel: 0,
-        modestbranding: 1,
-        enablejsapi: 1,
-        fs: 1,
-        playsinline: 1,
-        origin: window.location.origin,
-      },
+      playerVars: playerVarsConfig,
       events: {
         onReady: (event: any) => {
           setIsPlayerReady(true);
-          event.target.playVideo();
-          event.target.setVolume(volume);
-          if (isMuted) event.target.mute();
-          if (selectedQuality !== 'auto') {
-            event.target.setPlaybackQuality(selectedQuality);
+          try {
+            event.target.setVolume(volume);
+            if (isMuted) event.target.mute();
+            else event.target.unMute();
+            if (selectedQuality !== 'auto') {
+              event.target.setPlaybackQuality(selectedQuality);
+            }
+            event.target.setLoop(isLooping);
+            event.target.playVideo();
+          } catch (e) {
+            console.warn('onReady playVideo error:', e);
           }
-          event.target.setLoop(isLooping);
         },
         onStateChange: (event: any) => {
-          // YT.PlayerState.PLAYING = 1, PAUSED = 2, BUFFERING = 3, CUED = 5
+          // 1 = PLAYING, 2 = PAUSED, 0 = ENDED, 3 = BUFFERING
           if (event.data === 1) {
             setIsPlaying(true);
             try {
@@ -290,10 +306,11 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
               if (videoData) {
                 if (videoData.title) setCurrentTrackTitle(videoData.title);
                 if (videoData.author) setCurrentTrackAuthor(videoData.author);
+                if (videoData.video_id) setActiveVideoId(videoData.video_id);
               }
-              if (typeof event.target.getPlaylistIndex === 'function') {
-                const idx = event.target.getPlaylistIndex();
-                if (idx >= 0) setCurrentTrackIndex(idx);
+              const idx = event.target.getPlaylistIndex();
+              if (typeof idx === 'number' && idx >= 0) {
+                setCurrentTrackIndex(idx);
               }
               const q = event.target.getPlaybackQuality();
               if (q) setActiveQuality(q);
@@ -302,6 +319,10 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
             }
           } else if (event.data === 2) {
             setIsPlaying(false);
+          } else if (event.data === 0) {
+            if (isLooping) {
+              try { event.target.nextVideo(); } catch {}
+            }
           }
         },
         onPlaybackQualityChange: (event: any) => {
@@ -312,15 +333,27 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
         onError: (event: any) => {
           console.warn('YouTube Player error event:', event.data);
           if (event.data === 150 || event.data === 101) {
-            setErrorMessage('این ویدیو طبق سیاست ناشر در سایت‌های دیگر قابل پخش نیست، به ویدیوی بعدی منتقل شد.');
+            setErrorMessage('این ویدیو به دلیل محدودیت کپی‌رایت سازنده در وب‌سایت‌های خارجی مسدود است؛ در حال انتقال به ویدیوی بعدی...');
             setTimeout(() => {
-              if (playerRef.current) playerRef.current.nextVideo();
-            }, 1000);
+              if (playerRef.current && typeof playerRef.current.nextVideo === 'function') {
+                playerRef.current.nextVideo();
+              }
+            }, 1200);
           }
         },
       },
-    });
-  }, [selectedQuality, isLooping, volume, isMuted]);
+    };
+
+    if (vId) {
+      playerConfig.videoId = vId;
+    }
+
+    try {
+      playerRef.current = new window.YT.Player('yt-player-target', playerConfig);
+    } catch (createErr) {
+      console.error('Failed to create YT.Player instance:', createErr);
+    }
+  }, [activeVideoId, selectedQuality, isLooping, volume, isMuted]);
 
   // Initial load
   useEffect(() => {
@@ -356,17 +389,25 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
 
   // Play / Pause toggle
   const togglePlayPause = () => {
-    if (!playerRef.current) return;
+    if (!playerRef.current) {
+      const vId = activeVideoId || playlistData?.items?.[currentTrackIndex]?.id || playlistData?.items?.[0]?.id;
+      initPlayer(currentPlaylistId, currentType, vId);
+      return;
+    }
     try {
       if (isPlaying) {
-        playerRef.current.pauseVideo();
+        if (typeof playerRef.current.pauseVideo === 'function') {
+          playerRef.current.pauseVideo();
+        }
         setIsPlaying(false);
       } else {
-        playerRef.current.playVideo();
+        if (typeof playerRef.current.playVideo === 'function') {
+          playerRef.current.playVideo();
+        }
         setIsPlaying(true);
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn('Play/pause toggle error:', e);
     }
   };
 
@@ -374,8 +415,10 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   const handleNextVideo = () => {
     if (!playerRef.current) return;
     try {
-      playerRef.current.nextVideo();
-      setIsPlaying(true);
+      if (typeof playerRef.current.nextVideo === 'function') {
+        playerRef.current.nextVideo();
+        setIsPlaying(true);
+      }
     } catch {
       // ignore
     }
@@ -385,25 +428,44 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   const handlePrevVideo = () => {
     if (!playerRef.current) return;
     try {
-      playerRef.current.previousVideo();
-      setIsPlaying(true);
-    } catch {
-      // ignore
-    }
-  };
-
-  // Play specific track by index
-  const handlePlayTrackAt = (index: number) => {
-    if (!playerRef.current) return;
-    try {
-      if (typeof playerRef.current.playVideoAt === 'function') {
-        playerRef.current.playVideoAt(index);
-        setCurrentTrackIndex(index);
+      if (typeof playerRef.current.previousVideo === 'function') {
+        playerRef.current.previousVideo();
         setIsPlaying(true);
       }
     } catch {
       // ignore
     }
+  };
+
+  // Play specific track by item & index
+  const handlePlayTrack = (item: { id: string; title: string; author: string }, index: number) => {
+    setCurrentTrackIndex(index);
+    if (item.title) setCurrentTrackTitle(item.title);
+    if (item.author) setCurrentTrackAuthor(item.author);
+    if (item.id) setActiveVideoId(item.id);
+    setIsPlaying(true);
+    setErrorMessage(null);
+
+    if (playerRef.current) {
+      try {
+        if (item.id && typeof playerRef.current.loadVideoById === 'function') {
+          playerRef.current.loadVideoById({
+            videoId: item.id,
+            suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
+          });
+          playerRef.current.playVideo();
+          return;
+        } else if (typeof playerRef.current.playVideoAt === 'function') {
+          playerRef.current.playVideoAt(index);
+          playerRef.current.playVideo();
+          return;
+        }
+      } catch (err) {
+        console.warn('loadVideoById failed, reinitializing player:', err);
+      }
+    }
+
+    initPlayer(currentPlaylistId, currentType, item.id);
   };
 
   // Volume Change
@@ -740,7 +802,23 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
             className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-2xl group aspect-video"
           >
             {/* The slot where YouTube Iframe attaches */}
-            <div id="yt-iframe-slot" ref={playerContainerRef} className="w-full h-full" />
+            <div ref={playerContainerRef} className="w-full h-full">
+              <div id="yt-player-target" className="w-full h-full" />
+            </div>
+
+            {/* Centered Play Button Overlay if not playing */}
+            {!isPlaying && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                <button
+                  type="button"
+                  onClick={togglePlayPause}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-600/90 hover:bg-red-500 text-white flex items-center justify-center shadow-2xl transition-all duration-200 hover:scale-110 pointer-events-auto cursor-pointer border-2 border-white/20"
+                  title="شروع پخش ویدیو"
+                >
+                  <Play className="w-8 h-8 sm:w-9 sm:h-9 fill-current ml-1" />
+                </button>
+              </div>
+            )}
 
             {/* Overlaid Quality Badge (Top Left) */}
             <div className="absolute top-3 left-3 z-10 pointer-events-auto">
@@ -1025,7 +1103,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                     <button
                       key={item.id + idx}
                       type="button"
-                      onClick={() => handlePlayTrackAt(idx)}
+                      onClick={() => handlePlayTrack(item, idx)}
                       className={`w-full p-2 rounded-xl text-right transition flex items-center gap-2.5 cursor-pointer ${
                         isCurrent
                           ? 'bg-red-600/20 border border-red-500/40 text-white'
