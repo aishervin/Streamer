@@ -491,7 +491,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     }
   };
 
-  // Start Telegram Live Relay for audio broadcast
+  // Start Telegram Live Broadcast (streams the user playlist with background)
   const handleStartRelay = async () => {
     setIsRelaying(true);
     setRelayMessage(null);
@@ -501,16 +501,14 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           destination,
-          customUrl: customRtmp,
-          sourceType: 'live_tv',
-          channelName: `YouTube: ${playlistData?.title || 'Playlist'}`,
-          liveStreamUrl: 'https://pmcrohls.wns.live/hls/stream.m3u8',
+          customUrl: destination === 'custom' ? customRtmp : undefined,
+          sourceType: 'playlist',
           quality: relayQuality,
         }),
       });
       const data = await res.json();
       if (res.ok) {
-        setRelayMessage('رله مستقیم به لایو تلگرام با موفقیت آغاز شد.');
+        setRelayMessage('استریم پلی‌لیست صوتی شما به صورت ۲۴/۷ روی تلگرام آغاز شد.');
         if (onRefreshStatus) onRefreshStatus();
       } else {
         setRelayMessage(data.error || 'خطا در برقراری استریم تلگرام');
@@ -1077,7 +1075,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Radio className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-bold text-white">رله زنده به تلگرام (Live Broadcast)</span>
+                <span className="text-xs font-bold text-white">استریم زنده تلگرام (پلی‌لیست صوتی + کاور)</span>
               </div>
               {streamStatus.isStreaming ? (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 animate-pulse">
@@ -1089,7 +1087,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
             </div>
 
             <p className="text-[11px] text-zinc-400">
-              این موسیقی را می‌توانید به صورت لایو با کیفیت دلخواه به کانال یا گروه تلگرام مخابره کنید.
+              استریم مداوم آهنگ‌های بهینه‌شده به همراه تصویر ثابت کاور به کانال یا گروه تلگرام شما.
             </p>
 
             <div className="grid grid-cols-3 gap-1.5">
