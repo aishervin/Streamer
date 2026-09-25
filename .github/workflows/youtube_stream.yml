@@ -68,6 +68,7 @@ jobs:
           PLAYLIST_URL: ${{ inputs.playlist_url }}
           QUALITY: ${{ inputs.quality }}
           MAX_VIDEOS: ${{ inputs.max_videos }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         shell: bash
         run: |
           chmod +x scripts/stream_youtube.sh
