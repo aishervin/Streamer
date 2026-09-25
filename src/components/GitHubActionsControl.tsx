@@ -10,6 +10,8 @@ import {
   AlertCircle,
   Square,
   Sparkles,
+  KeyRound,
+  ShieldCheck,
 } from 'lucide-react';
 import { WorkflowRun } from '../types';
 
@@ -26,6 +28,9 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
   const [ytQuality, setYtQuality] = useState('720p');
   const [ytMaxVideos, setYtMaxVideos] = useState('20');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showCookieModal, setShowCookieModal] = useState(false);
+  const [cookieInput, setCookieInput] = useState('');
+  const [savingCookie, setSavingCookie] = useState(false);
 
   const fetchRuns = async () => {
     try {
@@ -141,6 +146,34 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
     }
   };
 
+  const handleSaveCookie = async () => {
+    if (!cookieInput.trim()) {
+      setMessage({ type: 'error', text: 'لطفاً محتوای کوکی یوتیوب (یا فایل Netscape) را وارد کنید.' });
+      return;
+    }
+    setSavingCookie(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/github/set-cookie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookieContent: cookieInput }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: 'success', text: 'کوکی یوتیوب با موفقیت به صورت امن رمزگذاری شده و در GitHub Secrets ذخیره شد!' });
+        setShowCookieModal(false);
+        setCookieInput('');
+      } else {
+        setMessage({ type: 'error', text: data.error || 'خطا در ذخیره کوکی در گیت‌هاب' });
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setSavingCookie(false);
+    }
+  };
+
   const getStatusBadge = (run: WorkflowRun) => {
     if (run.status === 'in_progress') {
       return (
@@ -208,6 +241,14 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCookieModal(true)}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-medium border border-amber-500/30 flex items-center gap-1.5 transition cursor-pointer"
+            title="تنظیم کوکی یوتیوب برای رفع خطای ربات (Sign in to confirm you’re not a bot)"
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>تنظیم کوکی یوتیوب</span>
+          </button>
           <button
             onClick={fetchRuns}
             disabled={loading}
@@ -508,6 +549,80 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
           </div>
         )}
       </div>
+      {/* YouTube Cookie Modal */}
+      {showCookieModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-zinc-100 text-sm">تنظیم کوکی یوتیوب (رفع خطای Sign in / Bot)</h3>
+              </div>
+              <button
+                onClick={() => setShowCookieModal(false)}
+                className="text-zinc-400 hover:text-zinc-200 text-xs px-2 py-1 rounded-lg bg-zinc-800"
+              >
+                بستن
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              سرورهای ابری گیت‌هاب (دیتاسنترهای مایکروسافت/گوگل) گاهی بدون کوکی با خطای{' '}
+              <code className="text-amber-400 bg-zinc-950 px-1 py-0.5 rounded">Sign in to confirm you’re not a bot</code>{' '}
+              مواجه می‌شوند. برای حل دائم این مورد، متن کوکی استخراج‌شده از مرورگر خود (فرمت Netscape یا رشته ساده) را اینجا قرار دهید تا با الگوریتم امن{' '}
+              <span className="text-indigo-400 font-semibold">libsodium</span> در سکرت‌های مخزن گیت‌هاب (YOUTUBE_COOKIES) ذخیره شود.
+            </p>
+
+            <textarea
+              value={cookieInput}
+              onChange={e => setCookieInput(e.target.value)}
+              placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;...&#10;یا محتوای صادر شده از افزونه Get cookies.txt LOCALLY"
+              rows={7}
+              className="w-full p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs font-mono focus:outline-none focus:border-amber-500/50 resize-none dir-ltr"
+            />
+
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <a
+                href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-cyan-400 hover:underline inline-flex items-center gap-1"
+              >
+                <span>دانلود اکستنشن Get cookies.txt</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCookieModal(false)}
+                  className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs transition"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCookie}
+                  disabled={savingCookie}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-2 transition disabled:opacity-50"
+                >
+                  {savingCookie ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>در حال رمزنگاری و ذخیره...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>ذخیره در GitHub Secrets</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
