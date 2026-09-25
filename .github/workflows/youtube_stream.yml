@@ -1,0 +1,74 @@
+name: YouTube Playlist Stream to Telegram
+
+on:
+  workflow_dispatch:
+    inputs:
+      playlist_url:
+        description: "YouTube Playlist URL or Video URL"
+        required: true
+        type: string
+        default: "https://www.youtube.com/playlist?list=PLDIoUOhQQPlXr63I_vwF9GD8sAKh77dWU"
+      destination:
+        description: "Streaming destination"
+        required: true
+        type: choice
+        options:
+          - channel
+          - group
+        default: channel
+      quality:
+        description: "Video stream resolution"
+        required: true
+        type: choice
+        options:
+          - 720p
+          - 480p
+          - 1080p
+        default: 720p
+      max_videos:
+        description: "Maximum videos to queue from playlist"
+        required: false
+        type: string
+        default: "20"
+
+jobs:
+  stream_youtube:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies (ffmpeg & latest yt-dlp)
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade yt-dlp
+
+      - name: Select RTMPS destination
+        id: destination
+        shell: bash
+        env:
+          CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL }}
+          TARGET: ${{ inputs.destination }}
+        run: |
+          if [ "$TARGET" = "channel" ]; then STREAM_URL="$CHANNEL_URL"; else STREAM_URL="$GROUP_URL"; fi
+          if [ -z "$STREAM_URL" ]; then echo "::error::Selected RTMPS secret is not configured."; exit 1; fi
+          echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Stream YouTube Playlist Video to Telegram
+        env:
+          TG_STREAM_URL: ${{ steps.destination.outputs.stream_url }}
+          PLAYLIST_URL: ${{ inputs.playlist_url }}
+          QUALITY: ${{ inputs.quality }}
+          MAX_VIDEOS: ${{ inputs.max_videos }}
+        shell: bash
+        run: |
+          chmod +x scripts/stream_youtube.sh
+          bash scripts/stream_youtube.sh "$PLAYLIST_URL" "$TG_STREAM_URL" "$MAX_VIDEOS" "$QUALITY"
