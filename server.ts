@@ -615,6 +615,46 @@ app.post('/api/download-url', async (req, res) => {
   }
 });
 
+// 5.2 Fetch YouTube Playlist Items using official YouTube Data API v3
+app.post('/api/youtube/playlist', async (req, res) => {
+  const { playlistUrl, maxResults = 25 } = req.body || {};
+  const apiKey = process.env.YOUTUBE_API_KEY || 'AIzaSyA0YYJqszisDD-mKBGNvnVgXMqE_GvD61g';
+  if (!playlistUrl) {
+    return res.status(400).json({ error: 'playlistUrl is required' });
+  }
+
+  let playlistId = playlistUrl;
+  const match = playlistUrl.match(/list=([a-zA-Z0-9_-]+)/);
+  if (match) playlistId = match[1];
+
+  try {
+    const apiRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=${maxResults}&playlistId=${playlistId}&key=${apiKey}`
+    );
+    const data: any = await apiRes.json();
+    if (!apiRes.ok) {
+      return res.status(apiRes.status).json({ error: data.error?.message || 'YouTube API error' });
+    }
+
+    const items = (data.items || []).map((it: any) => ({
+      id: it.snippet?.resourceId?.videoId,
+      title: it.snippet?.title,
+      channel: it.snippet?.videoOwnerChannelTitle || it.snippet?.channelTitle,
+      thumbnail: it.snippet?.thumbnails?.medium?.url || it.snippet?.thumbnails?.default?.url,
+      publishedAt: it.snippet?.publishedAt,
+    }));
+
+    res.json({
+      success: true,
+      playlistId,
+      total: items.length,
+      items,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 6. Upload custom background image
 app.post('/api/upload-background', backgroundUpload.single('background'), (_req, res) => {
   appendLog('Updated assets/background.jpg with custom image', 'info');
