@@ -62,6 +62,18 @@ jobs:
           python -m pip install --upgrade yt-dlp
           python -m pip install --upgrade "bgutil-ytdlp-pot-provider" 2>/dev/null || true
 
+      - name: Start YouTube Bot-Bypass Token Provider
+        run: |
+          echo "Starting bgutil POT Provider container..."
+          docker run --name bgutil-provider -d -p 4416:4416 brainicism/bgutil-ytdlp-pot-provider || true
+          for i in $(seq 1 10); do
+            if curl -s http://127.0.0.1:4416/ping 2>/dev/null | grep -iq "pong"; then
+              echo "POT Provider is ready on port 4416!"
+              break
+            fi
+            sleep 1
+          done
+
       - name: Select RTMPS destination
         id: destination
         shell: bash
