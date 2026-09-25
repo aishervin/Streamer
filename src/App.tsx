@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Radio, Music2, Sparkles, Sliders, RefreshCw, AlertTriangle, CheckCircle, Info, GitBranch, Tv } from 'lucide-react';
+import { Radio, Music2, Sparkles, Sliders, RefreshCw, AlertTriangle, CheckCircle, Info, GitBranch, Tv, Key } from 'lucide-react';
 import { AudioLibrary } from './components/AudioLibrary.tsx';
 import { OptimizedPlaylist } from './components/OptimizedPlaylist.tsx';
 import { BackgroundCard } from './components/BackgroundCard.tsx';
@@ -8,6 +8,7 @@ import { AudioPlayerBar } from './components/AudioPlayerBar.tsx';
 import { GitHubActionsControl } from './components/GitHubActionsControl.tsx';
 import { LiveTvPlayer } from './components/LiveTvPlayer.tsx';
 import { YouTubePlaylistPlayer } from './components/YouTubePlaylistPlayer.tsx';
+import { YouTubeAuthCard } from './components/YouTubeAuthCard.tsx';
 import { TrackInfo, StreamStatus, LogEntry } from './types.ts';
 
 export function App() {
@@ -27,7 +28,8 @@ export function App() {
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const [engineTab, setEngineTab] = useState<'youtube' | 'livetv' | 'container' | 'github'>('youtube');
+  const [engineTab, setEngineTab] = useState<'youtube' | 'livetv' | 'container' | 'github' | 'youtube_auth'>('youtube');
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // In-browser audio player state
@@ -419,6 +421,21 @@ export function App() {
                 Live
               </span>
             </button>
+
+            <button
+              onClick={() => setEngineTab('youtube_auth')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                engineTab === 'youtube_auth'
+                  ? 'bg-gradient-to-r from-red-600 to-amber-600 text-white shadow-md'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Key className="w-3.5 h-3.5 text-amber-300" />
+              <span>ورود یوتیوب / اکانت گوگل</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-500/20 text-amber-300 font-bold border border-amber-400/30">
+                OAuth
+              </span>
+            </button>
           </div>
 
           <div className="text-[11px] text-zinc-400 font-mono px-3">
@@ -428,8 +445,10 @@ export function App() {
               <span className="text-rose-400">● Live TV: پخش و رله بدون لگ شبکه‌های تصویری</span>
             ) : engineTab === 'container' ? (
               <span className="text-cyan-400">● Container: پخش پلی‌لیست موزیک با تصویر ثابت</span>
-            ) : (
+            ) : engineTab === 'github' ? (
               <span className="text-indigo-400">● GitHub Actions: اجرای گردش‌کار در کلاود گیت‌هاب</span>
+            ) : (
+              <span className="text-amber-400">● YouTube OAuth: ورود یک‌کلیکه با اکانت گوگل، استخراج توکن و پلی‌لیست‌ها</span>
             )}
           </div>
         </div>
@@ -440,6 +459,7 @@ export function App() {
             <YouTubePlaylistPlayer
               streamStatus={status}
               onRefreshStatus={fetchStatus}
+              externalPlaylistId={selectedPlaylistId}
             />
           ) : engineTab === 'livetv' ? (
             <LiveTvPlayer
@@ -455,8 +475,16 @@ export function App() {
               onClearLogs={() => setLogs([])}
               playlistCount={playlistCount}
             />
-          ) : (
+          ) : engineTab === 'github' ? (
             <GitHubActionsControl />
+          ) : (
+            <YouTubeAuthCard
+              onSelectPlaylist={(plId) => {
+                setSelectedPlaylistId(plId);
+                setEngineTab('youtube');
+              }}
+              showToast={showToast}
+            />
           )}
         </section>
 
