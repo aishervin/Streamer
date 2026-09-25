@@ -52,7 +52,7 @@ if (!fs.existsSync(BACKGROUND_FILE)) {
   }
 }
 
-// Multer storage for raw music files
+// Multer storage for raw music and video files
 const musicUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, MUSIC_DIR),
@@ -62,7 +62,7 @@ const musicUpload = multer({
       cb(null, sanitized);
     },
   }),
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB (supports full videos from mobile)
 });
 
 // Multer storage for background image
@@ -74,8 +74,11 @@ const backgroundUpload = multer({
   limits: { fileSize: 20 * 1024 * 1024 },
 });
 
-// Audio file extensions
-const AUDIO_EXTS = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.flac']);
+// Media file extensions (Audio & Video supported)
+const AUDIO_EXTS = new Set([
+  '.mp3', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.flac',
+  '.mp4', '.mkv', '.webm', '.avi', '.mov'
+]);
 
 // Streaming state
 export interface LiveTvChannel {
@@ -574,6 +577,42 @@ app.post('/api/upload', musicUpload.array('files', 50), (req, res) => {
     count: files.length,
     filenames: files.map(f => f.filename),
   });
+});
+
+// 5.1 Direct Download from URL (works directly with direct MP4/Audio links from phone or bots)
+app.post('/api/download-url', async (req, res) => {
+  const { url, filename: customFilename } = req.body || {};
+  if (!url || !url.startsWith('http')) {
+    return res.status(400).json({ error: 'Valid URL starting with http/https is required' });
+  }
+
+  try {
+    appendLog(`[Downloader] Starting direct download from: ${url}`, 'info');
+    let basename = `download_${Date.now()}.mp4`;
+    try {
+      const parsed = new URL(url);
+      const extracted = path.basename(parsed.pathname);
+      if (extracted && extracted.length > 3) basename = extracted;
+    } catch {}
+
+    const safeName = (customFilename || basename).replace(/[^a-zA-Z0-9._\-]/g, '_');
+    const targetPath = path.join(MUSIC_DIR, safeName);
+
+    const proc = spawn('curl', ['-L', '-f', '-s', '-o', targetPath, url]);
+    proc.on('close', code => {
+      if (code === 0 && fs.existsSync(targetPath) && fs.statSync(targetPath).size > 1000) {
+        const sizeMb = (fs.statSync(targetPath).size / (1024 * 1024)).toFixed(1);
+        appendLog(`[Downloader] Successfully downloaded: ${safeName} (${sizeMb} MB) into music/`, 'info');
+        res.json({ success: true, filename: safeName, sizeMb });
+      } else {
+        try { fs.unlinkSync(targetPath); } catch {}
+        appendLog(`[Downloader] Failed to download from: ${url}`, 'error');
+        res.status(500).json({ error: 'Could not download media file from the provided URL' });
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 6. Upload custom background image
