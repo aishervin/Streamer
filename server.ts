@@ -361,6 +361,45 @@ app.get('/api/youtube/info', async (req, res) => {
     }
 
     if (parsed.type === 'playlist') {
+      const apiKey = process.env.YOUTUBE_API_KEY || 'AIzaSyA0YYJqszisDD-mKBGNvnVgXMqE_GvD61g';
+
+      // 1. Try official YouTube Data API v3
+      if (apiKey) {
+        try {
+          const [plRes, itemsRes] = await Promise.all([
+            fetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${parsed.id}&key=${apiKey}`),
+            fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${parsed.id}&key=${apiKey}`),
+          ]);
+
+          const [plData, itemsData]: [any, any] = await Promise.all([plRes.json(), itemsRes.json()]);
+
+          if (itemsData.items && itemsData.items.length > 0) {
+            const playlistTitle = plData.items?.[0]?.snippet?.title || 'YouTube Playlist';
+            const authorName = plData.items?.[0]?.snippet?.channelTitle || 'YouTube Creator';
+
+            const items = itemsData.items.map((it: any) => ({
+              id: it.snippet?.resourceId?.videoId,
+              title: it.snippet?.title || 'Untitled Video',
+              author: it.snippet?.videoOwnerChannelTitle || it.snippet?.channelTitle || authorName,
+              thumbnailUrl: it.snippet?.thumbnails?.high?.url || it.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${it.snippet?.resourceId?.videoId}/hqdefault.jpg`,
+              url: `https://www.youtube.com/watch?v=${it.snippet?.resourceId?.videoId}`,
+            })).filter((i: any) => i.id);
+
+            return res.json({
+              type: 'playlist',
+              id: parsed.id,
+              title: playlistTitle,
+              author: authorName,
+              itemCount: items.length,
+              items,
+            });
+          }
+        } catch (apiErr: any) {
+          console.warn(`YouTube Data API fetch failed for ${parsed.id}:`, apiErr.message);
+        }
+      }
+
+      // 2. Fallback to RSS feed
       try {
         const feedUrl = `https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(parsed.id)}`;
         const rssRes = await fetch(feedUrl, {
