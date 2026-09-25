@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Music, Sparkles, Trash2, CheckCircle2, Clock, Play, Pause, Loader2, AlertCircle } from 'lucide-react';
+import { Upload, Music, Sparkles, Trash2, CheckCircle2, Clock, Play, Pause, Loader2, AlertCircle, Link2, Download } from 'lucide-react';
 import { TrackInfo } from '../types.ts';
 
 interface AudioLibraryProps {
@@ -26,9 +26,42 @@ export const AudioLibrary: React.FC<AudioLibraryProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [removeOriginals, setRemoveOriginals] = useState(false);
   const [isGeneratingDemo, setIsGeneratingDemo] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState('');
+  const [isDownloadingUrl, setIsDownloadingUrl] = useState(false);
+  const [downloadMsg, setDownloadMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pendingCount = rawTracks.filter(t => !t.isOptimized).length;
+
+  const handleDownloadFromUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!downloadUrl.trim()) return;
+    setIsDownloadingUrl(true);
+    setDownloadMsg(null);
+    try {
+      const res = await fetch('/api/download-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: downloadUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setDownloadMsg({
+          type: 'success',
+          text: `فایل با موفقیت دانلود شد: ${data.filename} (${data.sizeMb} مگابایت). دکمه بهینه‌سازی را بزنید تا وارد پلی‌لیست شود.`,
+        });
+        setDownloadUrl('');
+        // trigger background fetch or reload
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setDownloadMsg({ type: 'error', text: data.error || 'خطا در دانلود فایل' });
+      }
+    } catch (err: any) {
+      setDownloadMsg({ type: 'error', text: err.message || 'خطا در ارتباط با سرور' });
+    } finally {
+      setIsDownloadingUrl(false);
+    }
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -122,16 +155,66 @@ export const AudioLibrary: React.FC<AudioLibraryProps> = ({
           ref={fileInputRef}
           onChange={handleFileChange}
           multiple
-          accept=".mp3,.m4a,.aac,.ogg,.opus,.wav,.flac"
+          accept=".mp3,.m4a,.aac,.ogg,.opus,.wav,.flac,.mp4,.mkv,.webm,.avi,.mov"
           className="hidden"
         />
         <div className="flex flex-col items-center justify-center gap-2 text-zinc-400">
           <Upload className={`w-7 h-7 ${isDragging ? 'text-cyan-400' : 'text-zinc-500'}`} />
           <p className="text-sm font-medium text-zinc-200">
-            Drag & drop audio files here, or <span className="text-cyan-400 hover:underline">browse</span>
+            فایل‌های صوتی یا ویدیویی را اینجا بکشید یا <span className="text-cyan-400 hover:underline">انتخاب کنید</span>
           </p>
-          <p className="text-xs text-zinc-500">Supports MP3, M4A, AAC, OGG, OPUS, WAV, FLAC</p>
+          <p className="text-xs text-zinc-500">پشتیبانی کامل از MP4, MKV, WEBM, MP3, M4A, AAC, WAV, FLAC (تا حجم ۵۰۰ مگابایت)</p>
         </div>
+      </div>
+
+      {/* Direct URL Downloader */}
+      <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-xl p-4 mb-5">
+        <div className="flex items-center gap-2 mb-2 text-zinc-200 text-xs font-semibold">
+          <Link2 className="w-4 h-4 text-cyan-400" />
+          <span>دانلود مستقیم فایل با لینک (Direct URL Download)</span>
+        </div>
+        <form onSubmit={handleDownloadFromUrl} className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="url"
+            value={downloadUrl}
+            onChange={e => setDownloadUrl(e.target.value)}
+            placeholder="لینک مستقیم دانلود فایل صوتی یا ویدیویی (http/https)..."
+            className="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500 dir-ltr"
+          />
+          <button
+            type="submit"
+            disabled={isDownloadingUrl || !downloadUrl.trim()}
+            className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-medium text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+          >
+            {isDownloadingUrl ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>در حال دانلود...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                <span>دانلود به سرور</span>
+              </>
+            )}
+          </button>
+        </form>
+        {downloadMsg && (
+          <div
+            className={`mt-2 p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+              downloadMsg.type === 'success'
+                ? 'bg-emerald-950/50 text-emerald-300 border border-emerald-800/50'
+                : 'bg-red-950/50 text-red-300 border border-red-800/50'
+            }`}
+          >
+            {downloadMsg.type === 'success' ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            )}
+            <span>{downloadMsg.text}</span>
+          </div>
+        )}
       </div>
 
       {/* Optimize Controls */}
