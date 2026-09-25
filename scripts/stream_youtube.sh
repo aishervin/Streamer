@@ -128,23 +128,29 @@ while true; do
     echo "Downloading video clip with audio..."
     DOWNLOAD_SUCCESS=false
 
-    # Try 1: default with web,mweb,android,ios
-    if yt-dlp "${COOKIE_ARGS[@]}" \
-      --socket-timeout 30 \
+    # Check if local POT provider service is running
+    POT_ARGS=()
+    if curl -s http://127.0.0.1:4416/ping 2>/dev/null | grep -iq "pong"; then
+      POT_ARGS=("--extractor-args" "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416")
+    fi
+
+    # Try 1: with POT token provider & Node JS runtime solver
+    if yt-dlp "${COOKIE_ARGS[@]}" "${POT_ARGS[@]}" \
+      --js-runtimes node \
+      --socket-timeout 35 \
       -f "best[height<=$MAX_H][ext=mp4]/bestvideo[height<=$MAX_H]+bestaudio/best[height<=$MAX_H]/best" \
-      --extractor-args "youtube:player_client=mweb,web,ios,android" \
       --no-warnings --no-playlist \
       -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
       DOWNLOAD_SUCCESS=true
     fi
 
-    # Try 2: fallback to web_safari / tv client if blocked
+    # Try 2: fallback format with POT provider
     if [ "$DOWNLOAD_SUCCESS" = false ]; then
-      echo "Standard clients challenged, attempting fallback clients (tv,web_safari)..."
-      if yt-dlp "${COOKIE_ARGS[@]}" \
-        --socket-timeout 30 \
-        -f "best[height<=$MAX_H]/best" \
-        --extractor-args "youtube:player_client=tv,web_safari" \
+      echo "Standard format download challenged, attempting fallback formats..."
+      if yt-dlp "${COOKIE_ARGS[@]}" "${POT_ARGS[@]}" \
+        --js-runtimes node \
+        --socket-timeout 35 \
+        -f "b/bv+ba/best" \
         --no-warnings --no-playlist \
         -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
         DOWNLOAD_SUCCESS=true
