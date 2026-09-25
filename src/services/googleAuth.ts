@@ -16,7 +16,7 @@ const provider = new GoogleAuthProvider();
 // Workspace / YouTube scopes
 provider.addScope('https://www.googleapis.com/auth/youtube.readonly');
 provider.setCustomParameters({
-  prompt: 'select_account'
+  prompt: 'consent select_account'
 });
 
 let cachedAccessToken: string | null = null;
