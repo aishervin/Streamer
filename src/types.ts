@@ -15,7 +15,7 @@ export interface LibraryStatus {
 export interface StreamStatus {
   isStreaming: boolean;
   destination: 'channel' | 'group' | 'custom' | null;
-  sourceType?: 'playlist' | 'live_tv';
+  sourceType?: 'playlist' | 'live_tv' | 'youtube';
   channelName?: string;
   liveStreamUrl?: string;
   quality?: '480p' | '720p' | '1080p';
@@ -26,6 +26,24 @@ export interface StreamStatus {
   pid?: number | null;
   hasChannelSecret: boolean;
   hasGroupSecret: boolean;
+}
+
+export interface YouTubePlaylistItem {
+  id: string;
+  title: string;
+  author: string;
+  thumbnailUrl: string;
+  url: string;
+  duration?: string;
+}
+
+export interface YouTubePlaylistData {
+  type: 'playlist' | 'video';
+  id: string;
+  title: string;
+  author: string;
+  itemCount: number;
+  items: YouTubePlaylistItem[];
 }
 
 export interface LogEntry {

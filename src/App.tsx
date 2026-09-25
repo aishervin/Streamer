@@ -7,6 +7,7 @@ import { StreamControl } from './components/StreamControl.tsx';
 import { AudioPlayerBar } from './components/AudioPlayerBar.tsx';
 import { GitHubActionsControl } from './components/GitHubActionsControl.tsx';
 import { LiveTvPlayer } from './components/LiveTvPlayer.tsx';
+import { YouTubePlaylistPlayer } from './components/YouTubePlaylistPlayer.tsx';
 import { TrackInfo, StreamStatus, LogEntry } from './types.ts';
 
 export function App() {
@@ -26,7 +27,7 @@ export function App() {
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const [engineTab, setEngineTab] = useState<'container' | 'livetv' | 'github'>('livetv');
+  const [engineTab, setEngineTab] = useState<'youtube' | 'livetv' | 'container' | 'github'>('youtube');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // In-browser audio player state
@@ -358,8 +359,25 @@ export function App() {
         <div className="flex flex-wrap items-center justify-between gap-3 bg-zinc-900/50 p-1.5 rounded-xl border border-zinc-800">
           <div className="flex flex-wrap items-center gap-1.5">
             <button
+              onClick={() => setEngineTab('youtube')}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                engineTab === 'youtube'
+                  ? 'bg-red-600 text-white shadow-md'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 text-red-300">
+                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+              </svg>
+              <span>پلی‌لیست یوتیوب (کیفیت قابل تنظیم)</span>
+              <span className="px-1.5 py-0.2 rounded text-[10px] bg-red-500/30 text-red-200 font-bold border border-red-400/30">
+                جدید
+              </span>
+            </button>
+
+            <button
               onClick={() => setEngineTab('livetv')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
                 engineTab === 'livetv'
                   ? 'bg-rose-600 text-white shadow-md'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
@@ -374,7 +392,7 @@ export function App() {
 
             <button
               onClick={() => setEngineTab('container')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
                 engineTab === 'container'
                   ? 'bg-cyan-500 text-zinc-950 shadow-md'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
@@ -389,7 +407,7 @@ export function App() {
 
             <button
               onClick={() => setEngineTab('github')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
                 engineTab === 'github'
                   ? 'bg-indigo-600 text-white shadow-md'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
@@ -404,7 +422,9 @@ export function App() {
           </div>
 
           <div className="text-[11px] text-zinc-400 font-mono px-3">
-            {engineTab === 'livetv' ? (
+            {engineTab === 'youtube' ? (
+              <span className="text-red-400">● YouTube: پخش پلی‌لیست با کیفیت دلخواه ۱۰۸۰p/۷۲۰p/۴۸۰p و کنترل ترک‌ها</span>
+            ) : engineTab === 'livetv' ? (
               <span className="text-rose-400">● Live TV: پخش و رله بدون لگ شبکه‌های تصویری</span>
             ) : engineTab === 'container' ? (
               <span className="text-cyan-400">● Container: پخش پلی‌لیست موزیک با تصویر ثابت</span>
@@ -416,7 +436,12 @@ export function App() {
 
         {/* Stream Control & Live Terminal */}
         <section id="broadcast-section">
-          {engineTab === 'livetv' ? (
+          {engineTab === 'youtube' ? (
+            <YouTubePlaylistPlayer
+              streamStatus={status}
+              onRefreshStatus={fetchStatus}
+            />
+          ) : engineTab === 'livetv' ? (
             <LiveTvPlayer
               streamStatus={status}
               onRefreshStatus={fetchStatus}

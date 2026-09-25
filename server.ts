@@ -134,7 +134,7 @@ const LIVE_TV_CHANNELS: LiveTvChannel[] = [
 interface StreamState {
   isStreaming: boolean;
   destination: 'channel' | 'group' | 'custom' | null;
-  sourceType: 'playlist' | 'live_tv';
+  sourceType: 'playlist' | 'live_tv' | 'youtube';
   channelName?: string;
   liveStreamUrl?: string;
   quality?: '480p' | '720p' | '1080p';
@@ -256,6 +256,207 @@ app.get('/api/status', (_req, res) => {
 // 1.1 TV Channels
 app.get('/api/tv/channels', (_req, res) => {
   res.json({ channels: LIVE_TV_CHANNELS });
+});
+
+// 1.2 YouTube Presets & Info Endpoints
+const YOUTUBE_PRESETS = [
+  {
+    id: 'PLDIoUOhQQPlXr63I_vwF9GD8sAKh77dWU',
+    title: 'Top Hits & Trending Music 2026',
+    titleFa: 'آهنگ‌های ترند و برتر سال ۲۰۲۶',
+    category: 'Pop & Dance Hits',
+    author: 'Top Hits Official',
+    description: 'مجموعه پرشنونده‌ترین موزیک‌های روز جهان با کیفیت تصویر و صدای استودیویی',
+    thumbnailUrl: 'https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg',
+    badge: 'بین‌المللی',
+  },
+  {
+    id: 'PL15B1E77BB5708555',
+    title: 'Most Viewed Songs of All Time',
+    titleFa: 'پرطرفدارترین ترانه‌های تاریخ یوتیوب',
+    category: 'All-Time Legends',
+    author: 'Global Charts',
+    description: 'محبوب‌ترین ویدیوکلیپ‌ها با میلیاردها بازدید (Despacito, Shape of You, See You Again...)',
+    thumbnailUrl: 'https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg',
+    badge: 'میلیاردی',
+  },
+  {
+    id: 'PLRBp0Fe2GpgnZOm5rCopMAOYhZCPoUyO5',
+    title: 'NCS - Electronic & Bass Live',
+    titleFa: 'موزیک‌های الکترونیک و بیس‌دار NCS',
+    category: 'Electronic & Bass',
+    author: 'NoCopyrightSounds',
+    description: 'ترک‌های پرانرژی الکترونیک، گیمینگ، Trap و House بدون کپی‌رایت با کیفیت بالا',
+    thumbnailUrl: 'https://i.ytimg.com/vi/yJg-Y5byMMw/hqdefault.jpg',
+    badge: 'الکترونیک',
+  },
+  {
+    id: 'PLOHoVaTp8R7dfrJW5pumS0iD_dhlXKv17',
+    title: 'K-POP & Global Hits 2026',
+    titleFa: 'موزیک‌های پاپ و دنس ترند ۲۰۲۶',
+    category: 'Dance & Beats',
+    author: 'Music Universe',
+    description: 'پلی‌لیست پرانرژی بهترین آهنگ‌های ریتمیک، کلاب و رقص جهانی',
+    thumbnailUrl: 'https://i.ytimg.com/vi/jfKfPfyJRdk/hqdefault.jpg',
+    badge: 'انرژیک',
+  },
+];
+
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
+function extractYouTubeId(input: string): { type: 'playlist' | 'video'; id: string } | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // Extract from query list param: e.g. ?list=PL... or &list=PL...
+  const listMatch = trimmed.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+  if (listMatch) {
+    return { type: 'playlist', id: listMatch[1] };
+  }
+
+  // Direct playlist ID prefix
+  if (/^(PL|RD|UU|FL|LL|OLAK5uy_)[a-zA-Z0-9_-]+$/.test(trimmed)) {
+    return { type: 'playlist', id: trimmed };
+  }
+
+  // YouTube video URL
+  const videoMatch = trimmed.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|(?:embed|v)\/))([a-zA-Z0-9_-]{11})/);
+  if (videoMatch) {
+    return { type: 'video', id: videoMatch[1] };
+  }
+
+  // 11-char direct video ID
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return { type: 'video', id: trimmed };
+  }
+
+  return null;
+}
+
+app.get('/api/youtube/presets', (_req, res) => {
+  res.json({ presets: YOUTUBE_PRESETS });
+});
+
+app.get('/api/youtube/info', async (req, res) => {
+  try {
+    const query = typeof req.query.query === 'string' ? req.query.query : '';
+    if (!query) {
+      return res.status(400).json({ error: 'YouTube URL or ID is required' });
+    }
+
+    const parsed = extractYouTubeId(query);
+    if (!parsed) {
+      return res.status(400).json({ error: 'Invalid YouTube playlist URL or ID format' });
+    }
+
+    if (parsed.type === 'playlist') {
+      try {
+        const feedUrl = `https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(parsed.id)}`;
+        const rssRes = await fetch(feedUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        });
+
+        if (rssRes.ok) {
+          const xml = await rssRes.text();
+          const titleMatch = xml.match(/<title>([^<]+)<\/title>/);
+          const authorMatch = xml.match(/<author>\s*<name>([^<]+)<\/name>/);
+          const playlistTitle = titleMatch ? decodeHtmlEntities(titleMatch[1]) : 'YouTube Playlist';
+          const authorName = authorMatch ? decodeHtmlEntities(authorMatch[1]) : 'YouTube Creator';
+
+          const entries = xml.split('<entry>').slice(1);
+          const items = entries.map(entry => {
+            const vIdMatch = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+            const vTitleMatch = entry.match(/<title>([^<]+)<\/title>/);
+            const vAuthorMatch = entry.match(/<author>\s*<name>([^<]+)<\/name>/);
+            const vThumbMatch = entry.match(/<media:thumbnail[^>]+url="([^"]+)"/);
+
+            const vId = vIdMatch ? vIdMatch[1] : '';
+            return {
+              id: vId,
+              title: vTitleMatch ? decodeHtmlEntities(vTitleMatch[1]) : 'Untitled Video',
+              author: vAuthorMatch ? decodeHtmlEntities(vAuthorMatch[1]) : authorName,
+              thumbnailUrl: vThumbMatch ? vThumbMatch[1] : `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`,
+              url: `https://www.youtube.com/watch?v=${vId}`,
+            };
+          }).filter(item => item.id.length > 0);
+
+          return res.json({
+            type: 'playlist',
+            id: parsed.id,
+            title: playlistTitle,
+            author: authorName,
+            itemCount: items.length,
+            items,
+          });
+        }
+      } catch (feedErr: any) {
+        console.warn(`RSS feed fetch failed for ${parsed.id}:`, feedErr.message);
+      }
+
+      // Fallback for playlists without public RSS (e.g. dynamic mixes)
+      return res.json({
+        type: 'playlist',
+        id: parsed.id,
+        title: 'YouTube Playlist',
+        author: 'YouTube',
+        itemCount: 0,
+        items: [],
+      });
+    } else {
+      // Single video info via oEmbed
+      try {
+        const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(parsed.id)}&format=json`;
+        const oRes = await fetch(oembedUrl);
+        if (oRes.ok) {
+          const data = await oRes.json();
+          const item = {
+            id: parsed.id,
+            title: data.title || 'YouTube Video',
+            author: data.author_name || 'YouTube Channel',
+            thumbnailUrl: data.thumbnail_url || `https://i.ytimg.com/vi/${parsed.id}/hqdefault.jpg`,
+            url: `https://www.youtube.com/watch?v=${parsed.id}`,
+          };
+          return res.json({
+            type: 'video',
+            id: parsed.id,
+            title: item.title,
+            author: item.author,
+            itemCount: 1,
+            items: [item],
+          });
+        }
+      } catch (oErr: any) {
+        console.warn(`oEmbed fetch failed for ${parsed.id}:`, oErr.message);
+      }
+
+      return res.json({
+        type: 'video',
+        id: parsed.id,
+        title: 'YouTube Video',
+        author: 'YouTube Channel',
+        itemCount: 1,
+        items: [{
+          id: parsed.id,
+          title: 'YouTube Video',
+          author: 'YouTube Channel',
+          thumbnailUrl: `https://i.ytimg.com/vi/${parsed.id}/hqdefault.jpg`,
+          url: `https://www.youtube.com/watch?v=${parsed.id}`,
+        }],
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 2. Library Tracks
