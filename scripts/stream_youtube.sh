@@ -126,12 +126,34 @@ while true; do
     rm -f current_clip.*
 
     echo "Downloading video clip with audio..."
-    if ! yt-dlp "${COOKIE_ARGS[@]}" \
+    DOWNLOAD_SUCCESS=false
+
+    # Try 1: default with web,mweb,android,ios
+    if yt-dlp "${COOKIE_ARGS[@]}" \
+      --socket-timeout 30 \
       -f "best[height<=$MAX_H][ext=mp4]/bestvideo[height<=$MAX_H]+bestaudio/best[height<=$MAX_H]/best" \
-      --extractor-args "youtube:player_client=ios,android,web" \
+      --extractor-args "youtube:player_client=mweb,web,ios,android" \
       --no-warnings --no-playlist \
       -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
-      echo "Failed to download $vid, skipping to next..."
+      DOWNLOAD_SUCCESS=true
+    fi
+
+    # Try 2: fallback to web_safari / tv client if blocked
+    if [ "$DOWNLOAD_SUCCESS" = false ]; then
+      echo "Standard clients challenged, attempting fallback clients (tv,web_safari)..."
+      if yt-dlp "${COOKIE_ARGS[@]}" \
+        --socket-timeout 30 \
+        -f "best[height<=$MAX_H]/best" \
+        --extractor-args "youtube:player_client=tv,web_safari" \
+        --no-warnings --no-playlist \
+        -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
+        DOWNLOAD_SUCCESS=true
+      fi
+    fi
+
+    if [ "$DOWNLOAD_SUCCESS" = false ]; then
+      echo "Failed to download $vid with available clients, skipping to next..."
+      sleep 2
       continue
     fi
 
