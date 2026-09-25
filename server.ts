@@ -894,10 +894,10 @@ function runStreamLoop(targetUrl: string, abortController: AbortController) {
     args = [
       '-hide_banner',
       '-loglevel', 'info',
+      '-re',
       '-loop', '1',
       '-framerate', '10',
       '-i', 'assets/background.jpg',
-      '-re',
       '-stream_loop', '-1',
       '-f', 'concat',
       '-safe', '0',
@@ -1128,6 +1128,46 @@ app.post('/api/github/dispatch-stream', async (req, res) => {
     } else {
       const err = await ghRes.text();
       appendLog(`[GitHub Actions] Failed to dispatch workflow: ${err}`, 'error');
+      res.status(ghRes.status).json({ error: err });
+    }
+  } catch (err: any) {
+    appendLog(`[GitHub Actions] Dispatch error: ${err.message}`, 'error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 17.1 Dispatch YouTube Stream Workflow on GitHub Actions
+app.post('/api/github/dispatch-youtube-stream', async (req, res) => {
+  try {
+    const {
+      playlistUrl = 'https://www.youtube.com/playlist?list=PLDIoUOhQQPlXr63I_vwF9GD8sAKh77dWU',
+      destination = 'channel',
+      quality = '720p',
+      maxVideos = '20',
+    } = req.body || {};
+
+    appendLog(`[GitHub Actions] Dispatching "youtube_stream.yml" on ${GITHUB_REPO} for ${playlistUrl} (${destination}, ${quality})...`, 'info');
+
+    const ghRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/workflows/youtube_stream.yml/dispatches`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ref: 'main',
+        inputs: {
+          playlist_url: playlistUrl,
+          destination,
+          quality,
+          max_videos: String(maxVideos),
+        },
+      }),
+    });
+
+    if (ghRes.status === 204) {
+      appendLog(`[GitHub Actions] Successfully launched YouTube Playlist Video Streamer on GitHub Actions!`, 'stream');
+      res.json({ success: true, message: 'YouTube stream workflow launched successfully on GitHub Actions' });
+    } else {
+      const err = await ghRes.text();
+      appendLog(`[GitHub Actions] Failed to dispatch youtube_stream.yml: ${err}`, 'error');
       res.status(ghRes.status).json({ error: err });
     }
   } catch (err: any) {
