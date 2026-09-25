@@ -15,7 +15,13 @@ on:
         options:
           - channel
           - group
+          - custom
         default: channel
+      custom_rtmps_url:
+        description: "Custom RTMPS URL (if destination is custom)"
+        required: false
+        type: string
+        default: ""
       quality:
         description: "Video stream resolution"
         required: true
@@ -56,10 +62,19 @@ jobs:
         env:
           CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
           GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL }}
+          CUSTOM_URL: ${{ inputs.custom_rtmps_url }}
           TARGET: ${{ inputs.destination }}
         run: |
-          if [ "$TARGET" = "channel" ]; then STREAM_URL="$CHANNEL_URL"; else STREAM_URL="$GROUP_URL"; fi
-          if [ -z "$STREAM_URL" ]; then echo "::error::Selected RTMPS secret is not configured."; exit 1; fi
+          if [ "$TARGET" = "channel" ]; then
+            STREAM_URL="$CHANNEL_URL"
+          elif [ "$TARGET" = "group" ]; then
+            STREAM_URL="$GROUP_URL"
+          elif [ "$TARGET" = "custom" ]; then
+            STREAM_URL="$CUSTOM_URL"
+          else
+            STREAM_URL="$CHANNEL_URL"
+          fi
+          if [ -z "$STREAM_URL" ]; then echo "::error::Selected RTMPS destination is not configured or empty."; exit 1; fi
           echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
 
       - name: Stream YouTube Playlist Video to Telegram
