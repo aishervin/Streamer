@@ -22,6 +22,9 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState<string | null>(null);
   const [destination, setDestination] = useState<'channel' | 'group'>('channel');
+  const [ytPlaylistUrl, setYtPlaylistUrl] = useState('https://www.youtube.com/playlist?list=PLDIoUOhQQPlXr63I_vwF9GD8sAKh77dWU');
+  const [ytQuality, setYtQuality] = useState('720p');
+  const [ytMaxVideos, setYtMaxVideos] = useState('20');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchRuns = async () => {
@@ -44,6 +47,37 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
     const timer = setInterval(fetchRuns, 8000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleDispatchYouTubeStream = async () => {
+    setDispatching('youtube');
+    setMessage(null);
+    try {
+      const res = await fetch('/api/github/dispatch-youtube-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playlistUrl: ytPlaylistUrl,
+          destination,
+          quality: ytQuality,
+          maxVideos: ytMaxVideos,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({
+          type: 'success',
+          text: `اکشن یوتیوب (youtube_stream.yml) روی سرورهای گیت‌هاب استارت شد! ویدیوها با تصویر واقعی به ${destination === 'channel' ? 'کانال' : 'گروه'} تلگرام استریم می‌شوند.`,
+        });
+        setTimeout(fetchRuns, 2000);
+      } else {
+        setMessage({ type: 'error', text: data.error || 'خطا در ارسال دستور به گیت‌هاب' });
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setDispatching(null);
+    }
+  };
 
   const handleDispatchStream = async () => {
     setDispatching('stream');
@@ -214,6 +248,111 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
 
       {/* Dispatch Controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* YouTube Playlist Streamer Card */}
+        <div className="p-4 rounded-xl border border-red-500/40 bg-gradient-to-b from-red-950/20 to-zinc-950/60 flex flex-col justify-between gap-3 shadow-lg shadow-red-950/20 md:col-span-2">
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-sm font-bold text-white">استریم ویدیویی پلی‌لیست یوتیوب (YouTube Playlist to Telegram Live)</span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-900/40 text-red-300 border border-red-700/50">
+                youtube_stream.yml
+              </span>
+            </div>
+            <p className="text-xs text-zinc-300 mt-1">
+              موتور سرور گیت‌هاب اکشنز ویدیوهای واقعی پلی‌لیست یوتیوب (تصویر + صدا با کیفیت انتخابی) را به صورت خودکار دانلود و مستقیماً روی لایو کانال/گروه تلگرام استریم می‌کند.
+            </p>
+          </div>
+
+          <div className="space-y-2.5 pt-2 border-t border-zinc-800/80">
+            {/* Playlist URL input */}
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">لینک یا شناسه پلی‌لیست یوتیوب:</label>
+              <input
+                type="text"
+                value={ytPlaylistUrl}
+                onChange={e => setYtPlaylistUrl(e.target.value)}
+                placeholder="https://www.youtube.com/playlist?list=..."
+                className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 focus:outline-none focus:border-red-500"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Destination Radio */}
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-zinc-400">مقصد:</span>
+                <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="gh-yt-destination"
+                    checked={destination === 'channel'}
+                    onChange={() => setDestination('channel')}
+                    className="text-red-500 focus:ring-0"
+                  />
+                  کانال (Channel)
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="gh-yt-destination"
+                    checked={destination === 'group'}
+                    onChange={() => setDestination('group')}
+                    className="text-red-500 focus:ring-0"
+                  />
+                  گروه (Group)
+                </label>
+              </div>
+
+              {/* Quality & Max Videos */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-zinc-400">کیفیت:</span>
+                  <select
+                    value={ytQuality}
+                    onChange={e => setYtQuality(e.target.value)}
+                    className="px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200"
+                  >
+                    <option value="720p">720p HD</option>
+                    <option value="480p">480p SD</option>
+                    <option value="1080p">1080p FHD</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-zinc-400">حداکثر ویدیو:</span>
+                  <input
+                    type="number"
+                    value={ytMaxVideos}
+                    onChange={e => setYtMaxVideos(e.target.value)}
+                    min={1}
+                    max={50}
+                    className="w-16 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 text-center"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleDispatchYouTubeStream}
+              disabled={dispatching !== null}
+              className="mt-1 w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-red-900/30 cursor-pointer disabled:opacity-50"
+            >
+              {dispatching === 'youtube' ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>در حال فعال‌سازی در GitHub Actions...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>شروع استریم ویدیویی یوتیوب در GitHub Actions (تصویر و صدای زنده)</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* Stream Workflow Card */}
         <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-950/40 flex flex-col justify-between gap-3">
           <div>
