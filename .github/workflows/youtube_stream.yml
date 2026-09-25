@@ -45,16 +45,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python & Node.js
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies (ffmpeg & latest yt-dlp)
+      - name: Set up Node.js (for YouTube challenge solver)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies (ffmpeg, latest yt-dlp & token providers)
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
           python -m pip install --upgrade pip
           python -m pip install --upgrade yt-dlp
+          python -m pip install --upgrade "bgutil-ytdlp-pot-provider" 2>/dev/null || true
 
       - name: Select RTMPS destination
         id: destination
