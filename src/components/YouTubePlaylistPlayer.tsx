@@ -1252,26 +1252,16 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col sm:flex-row items-center gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleStartGitHubStream}
                     disabled={isRelaying}
-                    className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold shadow-lg shadow-red-600/25 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                    title="استریم با سرورهای ابری گیت‌هاب اکشنز (تصویر متحرک و ویدیوی واقعی یوتیوب)"
+                    className="w-full flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-bold shadow-lg shadow-red-600/25 transition flex items-center justify-center gap-2 cursor-pointer"
+                    title="استریم تصویری یوتیوب با سرورهای ابری گیت‌هاب (تصویر متحرک و صدای کامل)"
                   >
                     {isRelaying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-                    <span>استریم ویدیویی در GitHub</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleStartRelay}
-                    disabled={isRelaying}
-                    className="w-full sm:flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    {isRelaying ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                    <span>استریم صوتی لوکال</span>
+                    <span>شروع استریم تصویری یوتیوب (GitHub Actions)</span>
                   </button>
 
                   <button
@@ -1279,7 +1269,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                     onClick={handleResetRelay}
                     disabled={isRelaying}
                     title="ریست سرور استریم"
-                    className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 transition cursor-pointer shrink-0"
+                    className="p-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 transition cursor-pointer shrink-0"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                   </button>
