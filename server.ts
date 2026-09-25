@@ -1344,6 +1344,53 @@ app.post('/api/github/cancel/:runId', async (req, res) => {
   }
 });
 
+// 20. Update GitHub Secret (e.g. YOUTUBE_COOKIES)
+app.post('/api/github/set-cookie', async (req, res) => {
+  try {
+    const { cookieContent } = req.body || {};
+    if (!cookieContent || typeof cookieContent !== 'string') {
+      return res.status(400).json({ error: 'cookieContent is required' });
+    }
+
+    // 1. Get repo public key for secret encryption
+    const keyRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/secrets/public-key`);
+    if (!keyRes.ok) {
+      const err = await keyRes.text();
+      return res.status(keyRes.status).json({ error: `Failed to get public key: ${err}` });
+    }
+    const { key_id, key } = await keyRes.json();
+
+    // 2. Encrypt cookie content with libsodium
+    const sodium = (await import('libsodium-wrappers')).default;
+    await sodium.ready;
+    const binkey = sodium.from_base64(key, sodium.base64_variants.ORIGINAL);
+    const binsec = sodium.from_string(cookieContent.trim());
+    const encBytes = sodium.crypto_box_seal(binsec, binkey);
+    const encrypted_value = sodium.to_base64(encBytes, sodium.base64_variants.ORIGINAL);
+
+    // 3. Put secret YOUTUBE_COOKIES
+    const putRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/secrets/YOUTUBE_COOKIES`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        encrypted_value,
+        key_id,
+      }),
+    });
+
+    if (putRes.ok || putRes.status === 201 || putRes.status === 204) {
+      appendLog('[GitHub Actions] YOUTUBE_COOKIES secret successfully saved and encrypted on GitHub!', 'info');
+      res.json({ success: true, message: 'YouTube Cookies successfully saved to GitHub Secrets!' });
+    } else {
+      const err = await putRes.text();
+      res.status(putRes.status).json({ error: `Failed to set secret: ${err}` });
+    }
+  } catch (err: any) {
+    appendLog(`[GitHub Actions] Secret encryption error: ${err.message}`, 'error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Clean exit handlers
 process.on('SIGINT', () => {
   if (streamState.process) {
