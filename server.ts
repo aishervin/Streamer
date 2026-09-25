@@ -961,7 +961,7 @@ function runStreamLoop(targetUrl: string, abortController: AbortController) {
     streamState.process = null;
     streamState.pid = null;
 
-    if (abortController.signal.aborted) {
+    if (abortController.signal.aborted || !streamState.isStreaming) {
       appendLog('Stream stopped by user request.', 'warn');
       return;
     }
@@ -982,35 +982,58 @@ function runStreamLoop(targetUrl: string, abortController: AbortController) {
   });
 }
 
-// 13. Stop Streaming
+// 13. Stop Streaming (guaranteed force-stop and cleanup)
 app.post('/api/stream/stop', (_req, res) => {
-  if (!streamState.isStreaming) {
-    return res.json({ success: true, message: 'Stream is not running' });
-  }
+  appendLog('Stopping all stream processes and cleaning up...', 'warn');
 
-  appendLog('Stopping stream process...', 'warn');
+  streamState.isStreaming = false;
 
   if (streamState.abortController) {
-    streamState.abortController.abort();
+    try {
+      streamState.abortController.abort();
+    } catch {}
   }
 
   if (streamState.process && streamState.process.pid) {
     try {
-      streamState.process.kill('SIGTERM');
-      setTimeout(() => {
-        if (streamState.process) {
-          try { streamState.process.kill('SIGKILL'); } catch {}
-        }
-      }, 2000);
+      streamState.process.kill('SIGKILL');
     } catch {}
   }
 
-  streamState.isStreaming = false;
+  // Force kill any remaining ffmpeg process
+  try {
+    spawn('pkill', ['-9', '-f', 'ffmpeg']);
+  } catch {}
+
   streamState.process = null;
   streamState.pid = null;
   streamState.startedAt = null;
 
-  res.json({ success: true });
+  res.json({ success: true, message: 'All stream processes stopped' });
+});
+
+// 13.1 Reset Streaming Engine
+app.post('/api/stream/reset', (_req, res) => {
+  appendLog('Forced reset of all streaming services...', 'warn');
+  streamState.isStreaming = false;
+  if (streamState.abortController) {
+    try {
+      streamState.abortController.abort();
+    } catch {}
+  }
+  if (streamState.process && streamState.process.pid) {
+    try {
+      streamState.process.kill('SIGKILL');
+    } catch {}
+  }
+  try {
+    spawn('pkill', ['-9', '-f', 'ffmpeg']);
+  } catch {}
+  streamState.process = null;
+  streamState.pid = null;
+  streamState.startedAt = null;
+  streamState.reconnectCount = 0;
+  res.json({ success: true, message: 'Streaming engine reset successfully' });
 });
 
 // 14. Real-time Logs SSE
