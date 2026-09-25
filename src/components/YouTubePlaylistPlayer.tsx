@@ -568,6 +568,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
         body: JSON.stringify({
           playlistUrl: targetUrl,
           destination,
+          customUrl: destination === 'custom' ? customRtmp : undefined,
           quality: relayQuality,
           maxVideos: 25,
         }),
