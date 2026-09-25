@@ -1226,7 +1226,7 @@ app.get('/api/github/runs', async (_req, res) => {
 // 17. Dispatch GitHub Actions Stream Workflow
 app.post('/api/github/dispatch-stream', async (req, res) => {
   try {
-    const { destination = 'channel' } = req.body || {};
+    const { destination = 'channel', customUrl = '' } = req.body || {};
     appendLog(`[GitHub Actions] Dispatching workflow "stream.yml" (destination: ${destination}) on ${GITHUB_REPO}...`, 'info');
 
     const ghRes = await githubFetch(`/repos/${GITHUB_REPO}/actions/workflows/stream.yml/dispatches`, {
@@ -1236,6 +1236,7 @@ app.post('/api/github/dispatch-stream', async (req, res) => {
         ref: 'main',
         inputs: {
           destination,
+          custom_rtmps_url: customUrl || '',
         },
       }),
     });
@@ -1260,6 +1261,7 @@ app.post('/api/github/dispatch-youtube-stream', async (req, res) => {
     const {
       playlistUrl = 'https://www.youtube.com/playlist?list=PLDIoUOhQQPlXr63I_vwF9GD8sAKh77dWU',
       destination = 'channel',
+      customUrl = '',
       quality = '720p',
       maxVideos = '20',
     } = req.body || {};
@@ -1274,6 +1276,7 @@ app.post('/api/github/dispatch-youtube-stream', async (req, res) => {
         inputs: {
           playlist_url: playlistUrl,
           destination,
+          custom_rtmps_url: customUrl || '',
           quality,
           max_videos: String(maxVideos),
         },
