@@ -18,6 +18,8 @@ export interface StreamStatus {
   sourceType?: 'playlist' | 'live_tv' | 'youtube';
   channelName?: string;
   liveStreamUrl?: string;
+  youtubeUrl?: string;
+  currentPlayingTitle?: string;
   quality?: '480p' | '720p' | '1080p';
   targetUrlMasked?: string;
   startedAt?: string | null;
