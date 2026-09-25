@@ -140,6 +140,8 @@ interface StreamState {
   sourceType: 'playlist' | 'live_tv' | 'youtube';
   channelName?: string;
   liveStreamUrl?: string;
+  youtubeUrl?: string;
+  currentPlayingTitle?: string;
   quality?: '480p' | '720p' | '1080p';
   targetUrlMasked: string;
   rawTargetUrl: string;
@@ -155,6 +157,8 @@ const streamState: StreamState = {
   destination: null,
   sourceType: 'playlist',
   quality: '480p',
+  youtubeUrl: '',
+  currentPlayingTitle: '',
   targetUrlMasked: '',
   rawTargetUrl: '',
   startedAt: null,
@@ -240,6 +244,8 @@ app.get('/api/status', (_req, res) => {
       sourceType: streamState.sourceType,
       channelName: streamState.channelName,
       liveStreamUrl: streamState.liveStreamUrl,
+      youtubeUrl: streamState.youtubeUrl,
+      currentPlayingTitle: streamState.currentPlayingTitle,
       quality: streamState.quality,
       targetUrlMasked: streamState.targetUrlMasked,
       startedAt: streamState.startedAt ? streamState.startedAt.toISOString() : null,
@@ -884,6 +890,7 @@ app.post('/api/stream/start', (req, res) => {
     customUrl,
     sourceType = 'playlist',
     liveStreamUrl,
+    youtubeUrl,
     channelName,
     quality = '480p',
   } = req.body || {};
@@ -906,6 +913,10 @@ app.post('/api/stream/start', (req, res) => {
   if (sourceType === 'live_tv') {
     if (!liveStreamUrl || !liveStreamUrl.startsWith('http')) {
       return res.status(400).json({ error: 'Invalid live stream URL provided for TV relay.' });
+    }
+  } else if (sourceType === 'youtube') {
+    if (!youtubeUrl || typeof youtubeUrl !== 'string' || youtubeUrl.trim().length === 0) {
+      return res.status(400).json({ error: 'لطفاً لینک یا شناسه ویدیو یا پلی‌لیست یوتیوب را وارد کنید.' });
     }
   } else {
     // Ensure playlist has items
@@ -930,8 +941,9 @@ app.post('/api/stream/start', (req, res) => {
   streamState.isStreaming = true;
   streamState.destination = destination;
   streamState.sourceType = sourceType;
-  streamState.channelName = channelName || (sourceType === 'live_tv' ? 'Live TV' : undefined);
+  streamState.channelName = channelName || (sourceType === 'live_tv' ? 'Live TV' : sourceType === 'youtube' ? 'YouTube' : undefined);
   streamState.liveStreamUrl = liveStreamUrl;
+  streamState.youtubeUrl = youtubeUrl;
   streamState.quality = quality;
   streamState.rawTargetUrl = targetUrl;
   // Mask secret key portion in UI
@@ -941,7 +953,11 @@ app.post('/api/stream/start', (req, res) => {
   streamState.reconnectCount = 0;
   streamState.abortController = abortController;
 
-  const sourceDesc = sourceType === 'live_tv' ? `Live TV [${streamState.channelName} (${streamState.quality})]` : 'Local Playlist';
+  const sourceDesc = sourceType === 'live_tv'
+    ? `Live TV [${streamState.channelName} (${streamState.quality})]`
+    : sourceType === 'youtube'
+    ? `YouTube [${youtubeUrl} (${streamState.quality})]`
+    : 'Local Playlist';
   appendLog(`Starting Telegram stream (${sourceDesc}) to [${destination}] destination (${masked})...`, 'stream');
 
   // Spawn streaming loop
@@ -957,9 +973,239 @@ app.post('/api/stream/start', (req, res) => {
   });
 });
 
+// YouTube Continuous Stream Runner (supports playlists and single videos)
+async function runYouTubeStreamLoop(targetUrl: string, abortController: AbortController) {
+  if (abortController.signal.aborted || !streamState.isStreaming) return;
+
+  const rawUrl = (streamState.youtubeUrl || '').trim();
+  appendLog(`[YouTube Engine] بررسی و آماده‌سازی منبع یوتیوب: ${rawUrl}...`, 'stream');
+
+  let items: { id: string; title: string }[] = [];
+
+  const parsed = extractYouTubeId(rawUrl);
+  const isPlaylist = parsed ? parsed.type === 'playlist' : (rawUrl.includes('list=') || rawUrl.startsWith('PL') || rawUrl.startsWith('RD'));
+
+  if (isPlaylist) {
+    const plUrl = rawUrl.startsWith('http')
+      ? rawUrl
+      : `https://www.youtube.com/playlist?list=${parsed?.id || rawUrl}`;
+
+    appendLog(`[YouTube Engine] در حال واکشی فهرست ترک‌های پلی‌لیست...`, 'info');
+
+    const ytDlpListArgs = [
+      '--js-runtimes', `node:${process.execPath}`,
+      '--flat-playlist',
+      '--print', '%(id)s|%(title)s',
+      plUrl
+    ];
+
+    if (fs.existsSync(path.join(WORKSPACE_DIR, 'cookies.txt'))) {
+      ytDlpListArgs.unshift('--cookies', path.join(WORKSPACE_DIR, 'cookies.txt'));
+    }
+
+    try {
+      const listProc = spawnSync('yt-dlp', ytDlpListArgs, {
+        cwd: WORKSPACE_DIR,
+        encoding: 'utf-8',
+        timeout: 30000,
+      });
+
+      if (listProc.stdout) {
+        const lines = listProc.stdout.trim().split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('WARNING') || trimmed.startsWith('Deprecated') || trimmed.startsWith('ERROR')) continue;
+          const [vidId, ...titleParts] = trimmed.split('|');
+          if (vidId && vidId.length >= 8 && vidId.length <= 15) {
+            items.push({
+              id: vidId,
+              title: titleParts.join('|') || `ویدیو ${vidId}`
+            });
+          }
+        }
+      }
+    } catch (e: any) {
+      appendLog(`[YouTube Engine] خطا در واکشی فهرست پلی‌لیست: ${e.message}`, 'warn');
+    }
+  }
+
+  // Fallback for single video or if playlist fetch produced no items
+  if (items.length === 0) {
+    let singleId = parsed?.id || rawUrl;
+    const vMatch = rawUrl.match(/(?:v=|youtu\.be\/|\/v\/|\/embed\/)([a-zA-Z0-9_-]{11})/);
+    if (vMatch) singleId = vMatch[1];
+    items.push({ id: singleId, title: 'ویدیو یوتیوب' });
+  }
+
+  appendLog(`[YouTube Engine] تعداد ${items.length} ترک در صف استریم ۲۴/۷ قرار گرفت.`, 'stream');
+
+  let index = 0;
+
+  while (streamState.isStreaming && !abortController.signal.aborted) {
+    const item = items[index];
+    streamState.currentPlayingTitle = item.title;
+    appendLog(`[YouTube Engine] 🎵 شروع پخش [${index + 1}/${items.length}]: "${item.title}" (${item.id})`, 'stream');
+
+    const ytDlpStreamArgs = [
+      '--js-runtimes', `node:${process.execPath}`,
+      '-g',
+      '-f', 'best[height<=720][ext=mp4]/best[ext=mp4]/18/best',
+      `https://www.youtube.com/watch?v=${item.id}`
+    ];
+
+    if (fs.existsSync(path.join(WORKSPACE_DIR, 'cookies.txt'))) {
+      ytDlpStreamArgs.unshift('--cookies', path.join(WORKSPACE_DIR, 'cookies.txt'));
+    }
+
+    let directVideoUrl: string | null = null;
+    let directAudioUrl: string | null = null;
+
+    try {
+      const streamProc = spawnSync('yt-dlp', ytDlpStreamArgs, {
+        cwd: WORKSPACE_DIR,
+        encoding: 'utf-8',
+        timeout: 25000,
+      });
+
+      if (streamProc.stdout) {
+        const uLines = streamProc.stdout.trim().split('\n')
+          .map(l => l.trim())
+          .filter(l => l.startsWith('http'));
+
+        if (uLines.length >= 2) {
+          directVideoUrl = uLines[0];
+          directAudioUrl = uLines[1];
+        } else if (uLines.length === 1) {
+          directVideoUrl = uLines[0];
+        }
+      }
+    } catch (e: any) {
+      appendLog(`[YouTube Engine] خطا در استخراج لینک ویدیو: ${e.message}`, 'error');
+    }
+
+    if (!directVideoUrl) {
+      appendLog(`[YouTube Engine] لینک پخش برای ترک "${item.title}" یافت نشد، انتقال به ترک بعدی...`, 'warn');
+      index = (index + 1) % items.length;
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
+    }
+
+    const q = streamState.quality || '720p';
+    let scaleFilter = 'scale=-2:720';
+    let vBitrate = '1200k';
+    let maxBitrate = '1500k';
+    let bufSize = '3000k';
+
+    if (q === '480p') {
+      scaleFilter = 'scale=-2:480';
+      vBitrate = '700k';
+      maxBitrate = '900k';
+      bufSize = '1800k';
+    } else if (q === '1080p') {
+      scaleFilter = 'scale=-2:1080';
+      vBitrate = '2500k';
+      maxBitrate = '3000k';
+      bufSize = '5000k';
+    }
+
+    const ffmpegArgs = [
+      '-hide_banner',
+      '-loglevel', 'info',
+      '-re',
+      '-i', directVideoUrl,
+    ];
+
+    if (directAudioUrl) {
+      ffmpegArgs.push('-re', '-i', directAudioUrl, '-map', '0:v:0', '-map', '1:a:0');
+    }
+
+    ffmpegArgs.push(
+      '-vf', scaleFilter,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-tune', 'zerolatency',
+      '-pix_fmt', 'yuv420p',
+      '-r', '25',
+      '-g', '50',
+      '-keyint_min', '50',
+      '-b:v', vBitrate,
+      '-maxrate', maxBitrate,
+      '-bufsize', bufSize,
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-ar', '44100',
+      '-ac', '2',
+      '-f', 'flv',
+      '-flvflags', 'no_duration_filesize',
+      targetUrl
+    );
+
+    appendLog(`[ffmpeg] استریم لایو "${item.title}" به تلگرام (${q})...`, 'stream');
+
+    await new Promise<void>((resolve) => {
+      const proc = spawn('ffmpeg', ffmpegArgs, {
+        cwd: WORKSPACE_DIR,
+        signal: abortController.signal,
+      });
+
+      streamState.process = proc;
+      streamState.pid = proc.pid ?? null;
+
+      proc.stdout?.on('data', data => {
+        const lines = data.toString().split('\n');
+        for (const l of lines) {
+          if (l.trim()) appendLog(`[ffmpeg] ${l.trim()}`, 'stream');
+        }
+      });
+
+      proc.stderr?.on('data', data => {
+        const lines = data.toString().split('\n');
+        for (const l of lines) {
+          const trimmed = l.trim();
+          if (!trimmed) continue;
+          if (trimmed.startsWith('frame=') || trimmed.includes('fps=') || trimmed.includes('bitrate=')) {
+            // High frequency ticker, ignore
+          } else if (trimmed.toLowerCase().includes('error') || trimmed.includes('Connection refused')) {
+            appendLog(`[ffmpeg] ${trimmed}`, 'error');
+          }
+        }
+      });
+
+      proc.on('close', code => {
+        streamState.process = null;
+        streamState.pid = null;
+        appendLog(`[YouTube Engine] پخش ترک "${item.title}" به اتمام رسید (کد: ${code}).`, 'info');
+        resolve();
+      });
+
+      proc.on('error', err => {
+        if (err.name === 'AbortError') return resolve();
+        appendLog(`[ffmpeg] خطا در پردازش: ${err.message}`, 'error');
+        resolve();
+      });
+    });
+
+    if (abortController.signal.aborted || !streamState.isStreaming) {
+      appendLog('[YouTube Engine] استریم با دستور کاربر متوقف شد.', 'warn');
+      break;
+    }
+
+    // Move to next track in playlist (loops continuously)
+    index = (index + 1) % items.length;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+
 // Streaming process runner with auto-reconnect matching GitHub Actions workflow
 function runStreamLoop(targetUrl: string, abortController: AbortController) {
   if (abortController.signal.aborted) return;
+
+  if (streamState.sourceType === 'youtube') {
+    runYouTubeStreamLoop(targetUrl, abortController).catch(err => {
+      appendLog(`[YouTube Engine] خطای غیرمنتظره: ${err.message}`, 'error');
+    });
+    return;
+  }
 
   let args: string[] = [];
 
@@ -1378,6 +1624,12 @@ app.post('/api/github/set-cookie', async (req, res) => {
       }),
     });
 
+    // Also write locally so local stream engine immediately has access
+    try {
+      fs.writeFileSync(path.join(WORKSPACE_DIR, 'cookies.txt'), cookieContent.trim(), 'utf-8');
+      appendLog('[YouTube Engine] فایل cookies.txt محلی نیز به‌روزرسانی شد.', 'info');
+    } catch {}
+
     if (putRes.ok || putRes.status === 201 || putRes.status === 204) {
       appendLog('[GitHub Actions] YOUTUBE_COOKIES secret successfully saved and encrypted on GitHub!', 'info');
       res.json({ success: true, message: 'YouTube Cookies successfully saved to GitHub Secrets!' });
@@ -1424,6 +1676,9 @@ app.post('/api/github/set-oauth-token', async (req, res) => {
         key_id,
       }),
     });
+
+    // Also set in current process environment
+    process.env.YOUTUBE_OAUTH_TOKEN = token.trim();
 
     if (putRes.ok || putRes.status === 201 || putRes.status === 204) {
       appendLog('[GitHub Actions] YOUTUBE_OAUTH_TOKEN successfully encrypted and saved to GitHub Secrets!', 'info');
