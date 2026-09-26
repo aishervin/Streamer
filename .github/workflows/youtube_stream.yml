@@ -1,5 +1,9 @@
 name: YouTube Playlist Stream to Telegram
 
+concurrency:
+  group: telegram-stream-live
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
     inputs:
