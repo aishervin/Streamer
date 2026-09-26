@@ -23,7 +23,7 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState<string | null>(null);
-  const [destination, setDestination] = useState<'channel' | 'group'>('channel');
+  const [destination, setDestination] = useState<'channel' | 'group' | 'school'>('channel');
   const [ytPlaylistUrl, setYtPlaylistUrl] = useState('https://www.youtube.com/playlist?list=PLDIoUOhQQPlXr63I_vwF9GD8sAKh77dWU');
   const [ytQuality, setYtQuality] = useState('720p');
   const [ytMaxVideos, setYtMaxVideos] = useState('20');
@@ -343,6 +343,16 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
                   />
                   گروه (Group)
                 </label>
+                <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="gh-yt-destination"
+                    checked={destination === 'school'}
+                    onChange={() => setDestination('school')}
+                    className="text-red-500 focus:ring-0"
+                  />
+                  کانال School
+                </label>
               </div>
 
               {/* Quality & Max Videos */}
@@ -430,6 +440,16 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
                   className="text-cyan-500 focus:ring-0"
                 />
                 Group
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="gh-destination"
+                  checked={destination === 'school'}
+                  onChange={() => setDestination('school')}
+                  className="text-cyan-500 focus:ring-0"
+                />
+                School Channel
               </label>
             </div>
 
