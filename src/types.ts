@@ -14,7 +14,7 @@ export interface LibraryStatus {
 
 export interface StreamStatus {
   isStreaming: boolean;
-  destination: 'channel' | 'group' | 'custom' | null;
+  destination: 'channel' | 'group' | 'school' | 'custom' | null;
   sourceType?: 'playlist' | 'live_tv' | 'youtube';
   channelName?: string;
   liveStreamUrl?: string;
