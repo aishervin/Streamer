@@ -166,7 +166,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
 
   // Telegram Relay state for YouTube stream
   const [relayQuality, setRelayQuality] = useState<'480p' | '720p' | '1080p'>('720p');
-  const [destination, setDestination] = useState<'channel' | 'group' | 'custom'>('channel');
+  const [destination, setDestination] = useState<'channel' | 'group' | 'school' | 'custom'>('channel');
   const [customRtmp, setCustomRtmp] = useState<string>('');
   const [isRelaying, setIsRelaying] = useState<boolean>(false);
   const [relayMessage, setRelayMessage] = useState<string | null>(null);
@@ -1258,6 +1258,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
               >
                 <option value="channel">کانال تلگرام (CSTREAM_RTMPS_URL)</option>
                 <option value="group">گروه تلگرام (GSTREAM_RTMPS_URL)</option>
+                <option value="school">کانال School (2600754983:y_AM...)</option>
                 <option value="custom">آدرس RTMP دلخواه</option>
               </select>
 
