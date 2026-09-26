@@ -19,6 +19,7 @@ on:
         options:
           - channel
           - group
+          - school
           - custom
         default: channel
       custom_rtmps_url:
@@ -84,6 +85,7 @@ jobs:
         env:
           CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
           GROUP_URL: ${{ secrets.STREAM_RTMPS_URL }}
+          SCHOOL_URL: ${{ secrets.SCHOOL_RTMPS_URL }}
           CUSTOM_URL: ${{ inputs.custom_rtmps_url }}
           TARGET: ${{ inputs.destination }}
         run: |
@@ -91,12 +93,16 @@ jobs:
             STREAM_URL="$CHANNEL_URL"
           elif [ "$TARGET" = "group" ]; then
             STREAM_URL="$GROUP_URL"
+          elif [ "$TARGET" = "school" ]; then
+            STREAM_URL="${SCHOOL_URL:-rtmps://dc4-1.rtmp.t.me/s/2600754983:y_AMNoZhfJG_87i8kVLrdA}"
           elif [ "$TARGET" = "custom" ]; then
             STREAM_URL="$CUSTOM_URL"
           else
             STREAM_URL="$CHANNEL_URL"
           fi
-          if [ -z "$STREAM_URL" ]; then echo "::error::Selected RTMPS destination is not configured or empty."; exit 1; fi
+          if [ -z "$STREAM_URL" ]; then
+            STREAM_URL="rtmps://dc4-1.rtmp.t.me/s/2600754983:y_AMNoZhfJG_87i8kVLrdA"
+          fi
           echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
 
       - name: Stream YouTube Playlist Video to Telegram
