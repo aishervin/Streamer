@@ -79,7 +79,7 @@ jobs:
         shell: bash
         env:
           CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
-          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.STREAM_RTMPS_URL }}
           CUSTOM_URL: ${{ inputs.custom_rtmps_url }}
           TARGET: ${{ inputs.destination }}
         run: |
