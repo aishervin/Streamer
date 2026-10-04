@@ -8,20 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       destination:
-        description: "Streaming destination"
+        description: "Telegram destination"
         required: true
         type: choice
         options:
           - channel
           - group
-          - school
-          - custom
         default: channel
-      custom_rtmps_url:
-        description: "Custom RTMPS URL (if destination is custom)"
-        required: false
-        type: string
-        default: ""
 
 jobs:
   stream:
@@ -31,63 +24,73 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install ffmpeg
+      - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Build playlist
-        run: bash scripts/build_playlist.sh
+      - name: Assemble visualizer video
+        run: cat assets/visualizer.mp4.part.* > assets/visualizer.mp4
 
-      - name: Verify playlist
+      - name: Build playlist from music/
+        run: bash scripts/build_playlist.sh music
+
+      - name: Verify playlist and visualizer
         run: |
-          if [ ! -s playlist.txt ]; then echo "::error::Playlist is empty. Put music in music-optimized/ first."; exit 1; fi
-          cat playlist.txt
+          if [ ! -s playlist.txt ]; then
+            echo "::error::No supported audio files were found in music/."
+            exit 1
+          fi
+          if [ ! -s assets/visualizer.mp4 ]; then
+            echo "::error::assets/visualizer.mp4 is missing."
+            exit 1
+          fi
+          echo "Playlist entries: $(wc -l < playlist.txt)"
 
-      - name: Select RTMPS destination
-        id: destination
+      - name: Stream music with the visualizer
         shell: bash
         env:
+          DESTINATION: ${{ inputs.destination }}
           CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
           GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL }}
-          SCHOOL_URL: ${{ secrets.SCHOOL_RTMPS_URL }}
-          CUSTOM_URL: ${{ inputs.custom_rtmps_url }}
-          TARGET: ${{ inputs.destination }}
         run: |
-          if [ "$TARGET" = "channel" ]; then
-            STREAM_URL="$CHANNEL_URL"
-          elif [ "$TARGET" = "group" ]; then
-            STREAM_URL="$GROUP_URL"
-          elif [ "$TARGET" = "school" ]; then
-            STREAM_URL="${SCHOOL_URL:-rtmps://dc4-1.rtmp.t.me/s/2600754983:y_AMNoZhfJG_87i8kVLrdA}"
-          elif [ "$TARGET" = "custom" ]; then
-            STREAM_URL="$CUSTOM_URL"
-          else
-            STREAM_URL="$CHANNEL_URL"
-          fi
-          if [ -z "$STREAM_URL" ]; then
-            STREAM_URL="rtmps://dc4-1.rtmp.t.me/s/2600754983:y_AMNoZhfJG_87i8kVLrdA"
-          fi
-          echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
+          set -uo pipefail
+          case "$DESTINATION" in
+            channel)
+              TG_STREAM_URL="$CHANNEL_URL"
+              SECRET_NAME="CSTREAM_RTMPS_URL"
+              ;;
+            group)
+              TG_STREAM_URL="$GROUP_URL"
+              SECRET_NAME="GSTREAM_RTMPS_URL"
+              ;;
+            *)
+              echo "::error::Unsupported destination. Choose channel or group."
+              exit 1
+              ;;
+          esac
 
-      - name: Stream
-        env:
-          TG_STREAM_URL: ${{ steps.destination.outputs.stream_url }}
-        shell: bash
-        run: |
-          set -e
-          trap 'echo "Caught signal, exiting..."; pkill -TERM -x ffmpeg 2>/dev/null || true; wait 2>/dev/null || true; exit 0' INT TERM
+          if [[ -z "$TG_STREAM_URL" ]]; then
+            echo "::error::Required GitHub Actions secret $SECRET_NAME is missing."
+            exit 1
+          fi
+          echo "::add-mask::$TG_STREAM_URL"
+          trap 'pkill -TERM -x ffmpeg 2>/dev/null || true; wait 2>/dev/null || true; exit 0' INT TERM
+
           while true; do
-            echo "Starting stream..."
-            ffmpeg -hide_banner -loglevel info \
-              -loop 1 -framerate 2 -i assets/background.jpg \
+            echo "Starting looped music stream to $DESTINATION..."
+            if ffmpeg -hide_banner -loglevel info \
+              -re -stream_loop -1 -i assets/visualizer.mp4 \
               -re -stream_loop -1 -f concat -safe 0 -i playlist.txt \
               -map 0:v:0 -map 1:a:0 \
-              -c:v libx264 -preset ultrafast -tune stillimage \
-              -pix_fmt yuv420p -r 2 -g 4 \
-              -b:v 80k -maxrate 80k -bufsize 160k \
+              -vf "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p" \
+              -c:v libx264 -preset veryfast -tune zerolatency \
+              -r 30 -g 60 -sc_threshold 0 \
+              -b:v 700k -maxrate 700k -bufsize 1400k \
               -c:a aac -b:a 96k -ar 44100 -ac 2 \
-              -f flv "$TG_STREAM_URL"
-            status=$?
-            echo "ffmpeg exited with status $status"
-            echo "Stream ended. Reconnecting in 5s..."
+              -f flv "$TG_STREAM_URL"; then
+              echo "FFmpeg ended. Reconnecting in 5 seconds..."
+            else
+              status=$?
+              echo "::warning::FFmpeg exited with status $status; reconnecting in 5 seconds..."
+            fi
             sleep 5
           done
