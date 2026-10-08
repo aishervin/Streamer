@@ -148,6 +148,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [isLooping, setIsLooping] = useState<boolean>(true);
   const [isShuffling, setIsShuffling] = useState<boolean>(false);
+  const [isAutoPlay, setIsAutoPlay] = useState<boolean>(false);
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(0);
   const [currentTrackTitle, setCurrentTrackTitle] = useState<string>('');
   const [currentTrackAuthor, setCurrentTrackAuthor] = useState<string>('');
@@ -230,9 +231,9 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   }, [externalPlaylistId, fetchPlaylistDetails]);
 
   // Initialize or update YouTube Player
-  const initPlayer = useCallback((playlistId: string, type: 'playlist' | 'video', initialVideoId?: string) => {
+  const initPlayer = useCallback((playlistId: string, type: 'playlist' | 'video', initialVideoId?: string, shouldAutoPlay: boolean = false) => {
     if (!window.YT || !window.YT.Player) {
-      setTimeout(() => initPlayer(playlistId, type, initialVideoId), 250);
+      setTimeout(() => initPlayer(playlistId, type, initialVideoId, shouldAutoPlay), 250);
       return;
     }
 
@@ -241,27 +242,48 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
 
     const vId = initialVideoId || activeVideoId;
 
-    // If player already exists and healthy, reuse loadVideoById or loadPlaylist
-    if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
+    // If player already exists and healthy, reuse player
+    if (playerRef.current && (typeof playerRef.current.loadVideoById === 'function' || typeof playerRef.current.cueVideoById === 'function')) {
       try {
-        if (vId) {
-          playerRef.current.loadVideoById({
-            videoId: vId,
-            suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
-          });
-          playerRef.current.playVideo();
-          setIsPlaying(true);
-          return;
-        } else if (type === 'playlist') {
-          playerRef.current.loadPlaylist({
-            list: playlistId,
-            listType: 'playlist',
-            index: 0,
-            suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
-          });
-          playerRef.current.playVideo();
-          setIsPlaying(true);
-          return;
+        if (shouldAutoPlay) {
+          if (vId && typeof playerRef.current.loadVideoById === 'function') {
+            playerRef.current.loadVideoById({
+              videoId: vId,
+              suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
+            });
+            playerRef.current.playVideo();
+            setIsPlaying(true);
+            return;
+          } else if (type === 'playlist' && typeof playerRef.current.loadPlaylist === 'function') {
+            playerRef.current.loadPlaylist({
+              list: playlistId,
+              listType: 'playlist',
+              index: 0,
+              suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
+            });
+            playerRef.current.playVideo();
+            setIsPlaying(true);
+            return;
+          }
+        } else {
+          // Cue without playing automatically
+          if (vId && typeof playerRef.current.cueVideoById === 'function') {
+            playerRef.current.cueVideoById({
+              videoId: vId,
+              suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
+            });
+            setIsPlaying(false);
+            return;
+          } else if (type === 'playlist' && typeof playerRef.current.cuePlaylist === 'function') {
+            playerRef.current.cuePlaylist({
+              list: playlistId,
+              listType: 'playlist',
+              index: 0,
+              suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
+            });
+            setIsPlaying(false);
+            return;
+          }
         }
       } catch (e) {
         console.warn('Failed to reuse player, recreating...', e);
@@ -272,7 +294,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     container.innerHTML = '<div id="yt-player-target" style="width:100%;height:100%"></div>';
 
     const playerVarsConfig: any = {
-      autoplay: 1,
+      autoplay: shouldAutoPlay ? 1 : 0,
       controls: 1,
       rel: 0,
       modestbranding: 1,
@@ -302,9 +324,13 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
               event.target.setPlaybackQuality(selectedQuality);
             }
             event.target.setLoop(isLooping);
-            event.target.playVideo();
+            if (shouldAutoPlay) {
+              event.target.playVideo();
+            } else {
+              setIsPlaying(false);
+            }
           } catch (e) {
-            console.warn('onReady playVideo error:', e);
+            console.warn('onReady setup error:', e);
           }
         },
         onStateChange: (event: any) => {
@@ -365,11 +391,11 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     }
   }, [activeVideoId, selectedQuality, isLooping, volume, isMuted]);
 
-  // Initial load
+  // Initial load - explicitly disabled autoplay
   useEffect(() => {
     fetchPlaylistDetails(currentPlaylistId);
     const timer = setTimeout(() => {
-      initPlayer(currentPlaylistId, currentType);
+      initPlayer(currentPlaylistId, currentType, undefined, false);
     }, 500);
 
     return () => clearTimeout(timer);
@@ -401,7 +427,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
   const togglePlayPause = () => {
     if (!playerRef.current) {
       const vId = activeVideoId || playlistData?.items?.[currentTrackIndex]?.id || playlistData?.items?.[0]?.id;
-      initPlayer(currentPlaylistId, currentType, vId);
+      initPlayer(currentPlaylistId, currentType, vId, true);
       return;
     }
     try {
@@ -475,7 +501,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
       }
     }
 
-    initPlayer(currentPlaylistId, currentType, item.id);
+    initPlayer(currentPlaylistId, currentType, item.id, true);
   };
 
   // Volume Change
@@ -542,7 +568,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     const listMatch = query.match(/[?&]list=([a-zA-Z0-9_-]+)/);
     const isPlaylist = Boolean(listMatch) || query.startsWith('PL') || query.startsWith('RD');
     const newId = listMatch ? listMatch[1] : query;
-    initPlayer(newId, isPlaylist ? 'playlist' : 'video');
+    initPlayer(newId, isPlaylist ? 'playlist' : 'video', undefined, isAutoPlay);
   };
 
   // Bookmark current playlist
@@ -812,7 +838,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                   setCurrentPlaylistId(preset.id);
                   setCurrentType('playlist');
                   fetchPlaylistDetails(preset.id);
-                  initPlayer(preset.id, 'playlist');
+                  initPlayer(preset.id, 'playlist', undefined, isAutoPlay);
                 }}
                 className={`p-3 rounded-xl border text-right transition flex flex-col justify-between gap-2 text-xs cursor-pointer ${
                   isSelected
@@ -1043,6 +1069,25 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
                   }`}
                 >
                   <Shuffle className="w-4 h-4" />
+                </button>
+
+                {/* Autoplay Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setIsAutoPlay(prev => !prev)}
+                  title={isAutoPlay ? 'پخش خودکار (Autoplay) روشن است' : 'پخش خودکار (Autoplay) خاموش است'}
+                  className={`px-2.5 py-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1.5 text-xs ${
+                    isAutoPlay
+                      ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-zinc-200'
+                  }`}
+                >
+                  <span className="text-[10px] font-mono font-bold tracking-tight">AUTOPLAY</span>
+                  <span className={`text-[9px] px-1 py-0.5 rounded font-semibold ${
+                    isAutoPlay ? 'bg-red-500/40 text-red-100' : 'bg-zinc-900 text-zinc-400'
+                  }`}>
+                    {isAutoPlay ? 'روشن' : 'خاموش'}
+                  </span>
                 </button>
               </div>
 
