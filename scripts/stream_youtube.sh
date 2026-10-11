@@ -55,6 +55,24 @@ fi
 
 trap 'echo "Signal received, stopping stream..."; pkill -TERM -x ffmpeg 2>/dev/null || true; exit 0' INT TERM
 
+# Check if input is a live IPTV / HLS stream or direct media URL
+if [[ "$PLAYLIST_URL" =~ \.m3u8 ]] || [[ "$PLAYLIST_URL" =~ live\.wns\.live ]] || [[ "$PLAYLIST_URL" =~ 3qsdn\.com ]] || [[ "$PLAYLIST_URL" =~ \.mp4$ ]]; then
+  echo "========================================="
+  echo "Detected Live HLS/IPTV Stream or Direct URL: $PLAYLIST_URL"
+  echo "Relaying directly to Telegram via FFmpeg with anti-lag settings ($QUALITY)..."
+  echo "========================================="
+  while true; do
+    ffmpeg -hide_banner -loglevel info -re -i "$PLAYLIST_URL" \
+      -vf "scale=$SCALE" -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p \
+      -r 25 -g 50 -keyint_min 50 -b:v "$VBITRATE" -maxrate "$MAXRATE" -bufsize "$BUFSIZE" \
+      -c:a aac -b:a 128k -ar 44100 -ac 2 -f flv -flvflags no_duration_filesize "$TG_STREAM_URL" || true
+    echo "Live stream connection dropped. Reconnecting in 5s..."
+    sleep 5
+  done
+  exit 0
+fi
+
+
 while true; do
   echo "Fetching video list from playlist..."
   VIDEO_IDS=()
