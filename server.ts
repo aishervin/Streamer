@@ -25,6 +25,7 @@ const BACKGROUND_FILE = path.join(ASSETS_DIR, 'background.jpg');
 // Default test RTMPS endpoints (embedded directly in source for testing)
 const DEFAULT_CHANNEL_URL = 'rtmps://dc4-1.rtmp.t.me/s/2410187005:bDYSz_1uXp8kZ3BxS7tN9w';
 const DEFAULT_GROUP_URL = 'rtmps://dc4-1.rtmp.t.me/s/1703832793:XfxQ4qhKFtbljMA2AApRvQ';
+const DEFAULT_SCHOOL_URL = 'rtmps://dc4-1.rtmp.t.me/s/2600754983:y_AMNoZhfJG_87i8kVLrdA';
 
 // Ensure base directories exist
 for (const dir of [MUSIC_DIR, MUSIC_OPTIMIZED_DIR, ASSETS_DIR]) {
@@ -254,6 +255,7 @@ app.get('/api/status', (_req, res) => {
       pid: streamState.pid,
       hasChannelSecret: Boolean(process.env.CSTREAM_RTMPS_URL || DEFAULT_CHANNEL_URL),
       hasGroupSecret: Boolean(process.env.GSTREAM_RTMPS_URL || DEFAULT_GROUP_URL),
+      hasSchoolSecret: Boolean(process.env.SCHOOL_RTMPS_URL || DEFAULT_SCHOOL_URL),
     },
     system: {
       hasBackground: fs.existsSync(BACKGROUND_FILE),
@@ -900,6 +902,8 @@ app.post('/api/stream/start', (req, res) => {
     targetUrl = process.env.CSTREAM_RTMPS_URL || DEFAULT_CHANNEL_URL;
   } else if (destination === 'group') {
     targetUrl = process.env.GSTREAM_RTMPS_URL || DEFAULT_GROUP_URL;
+  } else if (destination === 'school') {
+    targetUrl = process.env.SCHOOL_RTMPS_URL || DEFAULT_SCHOOL_URL;
   } else if (destination === 'custom') {
     targetUrl = customUrl || '';
   }

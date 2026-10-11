@@ -1,8 +1,11 @@
 {
-  "apiKey": "AIzaSyMockKeyForBuildFallback",
-  "authDomain": "mock-project.firebaseapp.com",
-  "projectId": "mock-project",
-  "storageBucket": "mock-project.appspot.com",
-  "messagingSenderId": "000000000000",
-  "appId": "1:000000000000:web:0000000000000000000000"
+  "projectId": "gen-lang-client-0698803239",
+  "appId": "1:299522263119:web:f09776ad5d5f7623bcc23a",
+  "apiKey": "AIzaSyDMTMLcoTfvutPChzXE1z7ZVWD5ElAMdsc",
+  "authDomain": "gen-lang-client-0698803239.firebaseapp.com",
+  "storageBucket": "gen-lang-client-0698803239.firebasestorage.app",
+  "messagingSenderId": "299522263119",
+  "measurementId": "",
+  "oAuthClientId": "299522263119-kqpriqfa93k7s2h417i6h0th1o2pkfh7.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }

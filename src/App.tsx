@@ -252,7 +252,7 @@ export function App() {
 
   // Start Live Stream
   const handleStartStream = async (
-    destination: 'channel' | 'group' | 'custom',
+    destination: 'channel' | 'group' | 'school' | 'custom',
     customUrl?: string,
   ) => {
     try {

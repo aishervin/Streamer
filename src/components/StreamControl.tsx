@@ -21,7 +21,7 @@ import { StreamStatus, LogEntry } from '../types.ts';
 interface StreamControlProps {
   status: StreamStatus;
   logs: LogEntry[];
-  onStartStream: (destination: 'channel' | 'group' | 'custom', customUrl?: string) => Promise<void>;
+  onStartStream: (destination: 'channel' | 'group' | 'school' | 'custom', customUrl?: string) => Promise<void>;
   onStopStream: () => Promise<void>;
   onClearLogs: () => void;
   playlistCount: number;
@@ -35,7 +35,7 @@ export const StreamControl: React.FC<StreamControlProps> = ({
   onClearLogs,
   playlistCount,
 }) => {
-  const [destination, setDestination] = useState<'channel' | 'group' | 'custom'>('channel');
+  const [destination, setDestination] = useState<'channel' | 'group' | 'school' | 'custom'>('channel');
   const [customUrl, setCustomUrl] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -231,6 +231,36 @@ export const StreamControl: React.FC<StreamControlProps> = ({
           </div>
           <p className="text-xs text-cyan-400 mt-2 font-mono truncate">
             rtmps://dc4-1.rtmp.t.me/...1703832793
+          </p>
+        </label>
+
+        {/* Telegram School Channel Option */}
+        <label
+          onClick={() => !status.isStreaming && setDestination('school')}
+          className={`relative p-4 rounded-xl border transition cursor-pointer flex flex-col justify-between ${
+            destination === 'school'
+              ? 'border-cyan-500/80 bg-cyan-950/20 shadow-md'
+              : 'border-zinc-800 bg-zinc-950/40 hover:border-zinc-700'
+          } ${status.isStreaming ? 'opacity-60 cursor-not-allowed' : ''}`}
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="destination"
+                checked={destination === 'school'}
+                onChange={() => setDestination('school')}
+                disabled={status.isStreaming}
+                className="text-cyan-500 focus:ring-0"
+              />
+              <span className="text-sm font-semibold text-zinc-200">School Channel</span>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+              Ready
+            </span>
+          </div>
+          <p className="text-xs text-cyan-400 mt-2 font-mono truncate">
+            rtmps://dc4-1.rtmp.t.me/...2600754983
           </p>
         </label>
 
