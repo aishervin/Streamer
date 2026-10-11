@@ -252,7 +252,7 @@ export function App() {
 
   // Start Live Stream
   const handleStartStream = async (
-    destination: 'channel' | 'group' | 'school' | 'custom',
+    destination: 'channel' | 'group' | 'custom',
     customUrl?: string,
   ) => {
     try {
@@ -329,12 +329,12 @@ export function App() {
             <div>
               <h1 className="text-base font-bold text-zinc-100 tracking-tight flex items-center gap-2">
                 Telegram Music Streamer
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700 font-normal">
-                  FFmpeg 24/7
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
+                  ⚡ اجرای مستقیم در استودیو (بدون نیاز به گیت‌هاب اکشن)
                 </span>
               </h1>
               <p className="text-xs text-zinc-400">
-                Continuous AAC 96k live audio broadcast pipeline
+                پخش ۲۴ ساعته، رله لایو و استریم ابری مستقیم از سرور داخلی
               </p>
             </div>
           </div>
@@ -343,12 +343,12 @@ export function App() {
             {status.isStreaming ? (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                <span>Broadcasting to {status.destination}</span>
+                <span>درحال استریم زنده به {status.destination}</span>
               </div>
             ) : (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-800/80 border border-zinc-700/80 text-zinc-400 text-xs">
-                <span className="w-2 h-2 rounded-full bg-zinc-600" />
-                <span>Engine Ready</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span>آماده پخش مستقیم</span>
               </div>
             )}
           </div>

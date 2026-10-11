@@ -80,8 +80,7 @@ export const LiveTvPlayer: React.FC<LiveTvPlayerProps> = ({
 }) => {
   const [channels] = useState<LiveTvChannel[]>(DEFAULT_CHANNELS);
   const [selectedChannel, setSelectedChannel] = useState<LiveTvChannel>(DEFAULT_CHANNELS[0]);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [isAutoPlay, setIsAutoPlay] = useState<boolean>(false);
+  const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(0.8);
   const [playerError, setPlayerError] = useState<string | null>(null);
@@ -149,15 +148,11 @@ export const LiveTvPlayer: React.FC<LiveTvPlayerProps> = ({
           setAvailableLevels([]);
         }
 
-        if (isAutoPlay) {
-          video.play().then(() => {
-            setIsPlaying(true);
-          }).catch(() => {
-            setIsPlaying(false);
-          });
-        } else {
+        video.play().then(() => {
+          setIsPlaying(true);
+        }).catch(() => {
           setIsPlaying(false);
-        }
+        });
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
@@ -186,11 +181,7 @@ export const LiveTvPlayer: React.FC<LiveTvPlayerProps> = ({
       // Native Safari HLS
       video.src = currentStreamUrl;
       video.addEventListener('loadedmetadata', () => {
-        if (isAutoPlay) {
-          video.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-        } else {
-          setIsPlaying(false);
-        }
+        video.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
       });
     } else {
       setPlayerError('مرورگر شما از فرمت HLS (m3u8) پشتیبانی نمی‌کند.');
@@ -589,7 +580,6 @@ export const LiveTvPlayer: React.FC<LiveTvPlayerProps> = ({
                     key={ch.id}
                     onClick={() => {
                       setIsCustomMode(false);
-                      setIsAutoPlay(true);
                       setSelectedChannel(ch);
                     }}
                     className={`text-right p-3 rounded-xl border transition flex items-center justify-between gap-3 ${

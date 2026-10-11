@@ -7,20 +7,10 @@ import {
   User,
   signOut
 } from 'firebase/auth';
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
+import firebaseConfig from '../../firebase-applet-config.json';
 
-const hasFirebaseConfig = Boolean(
-  firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId
-);
-const app = hasFirebaseConfig ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)) : null;
-export const auth = app ? getAuth(app) : null;
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+export const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
 // Workspace / YouTube scopes
@@ -36,11 +26,6 @@ export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
 ) => {
-  if (!auth) {
-    onAuthFailure?.();
-    return () => undefined;
-  }
-
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user && cachedAccessToken) {
       if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
@@ -51,7 +36,6 @@ export const initAuth = (
 };
 
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string }> => {
-  if (!auth) throw new Error('تنظیمات Firebase کامل نیست؛ مقادیر VITE_FIREBASE_* را در .env.local وارد کنید.');
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
@@ -78,6 +62,6 @@ export const setCachedAccessToken = (token: string | null) => {
 };
 
 export const googleSignOut = async (): Promise<void> => {
-  if (auth) await signOut(auth);
+  await signOut(auth);
   cachedAccessToken = null;
 };
