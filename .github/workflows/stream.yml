@@ -39,19 +39,7 @@ jobs:
           git clone --depth 1 https://github.com/aishervin/Mp3.git music_repo
           cp music_repo/*.mp3 music/ 2>/dev/null || true
 
-      - name: Build Cover Art Video Segments & Playlist
-        run: |
-          python3 scripts/prepare_mp3_playlist.py music
-
-      - name: Verify Playlist
-        run: |
-          if [ ! -s mp3_concat.txt ] && [ ! -s playlist.txt ]; then
-            echo "::error::No playlist generated."
-            exit 1
-          fi
-          echo "Playlist ready for streaming!"
-
-      - name: Stream music with cover artwork
+      - name: Start Instant Realtime Live Stream
         shell: bash
         env:
           DESTINATION: ${{ inputs.destination }}
@@ -79,28 +67,5 @@ jobs:
             exit 1
           fi
           echo "::add-mask::$TG_STREAM_URL"
-          trap 'pkill -TERM -x ffmpeg 2>/dev/null || true; wait 2>/dev/null || true; exit 0' INT TERM
 
-          while true; do
-            echo "Starting looped music stream with track cover artwork to $DESTINATION..."
-            if [ -s mp3_concat.txt ]; then
-              ffmpeg -hide_banner -loglevel info \
-                -re -stream_loop -1 -f concat -safe 0 -i mp3_concat.txt \
-                -c copy -f flv "$TG_STREAM_URL"
-            else
-              bash scripts/build_playlist.sh music
-              cat assets/visualizer.mp4.part.* > assets/visualizer.mp4 2>/dev/null || true
-              ffmpeg -hide_banner -loglevel info \
-                -re -stream_loop -1 -i assets/visualizer.mp4 \
-                -re -stream_loop -1 -f concat -safe 0 -i playlist.txt \
-                -map 0:v:0 -map 1:a:0 \
-                -vf "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p" \
-                -c:v libx264 -preset veryfast -tune zerolatency \
-                -r 30 -g 60 -sc_threshold 0 \
-                -b:v 700k -maxrate 700k -bufsize 1400k \
-                -c:a aac -b:a 96k -ar 44100 -ac 2 \
-                -f flv "$TG_STREAM_URL"
-            fi
-            echo "FFmpeg ended. Reconnecting in 5 seconds..."
-            sleep 5
-          done
+          python3 scripts/live_mp3_streamer.py music "$TG_STREAM_URL"
