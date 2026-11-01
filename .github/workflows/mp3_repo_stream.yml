@@ -51,19 +51,7 @@ jobs:
           echo "Cloning MP3 repository: ${{ inputs.mp3_repo }}..."
           git clone --depth 1 "${{ inputs.mp3_repo }}" mp3_repo
 
-      - name: Extract Cover Art & Build Video Segments
-        run: |
-          python3 scripts/prepare_mp3_playlist.py mp3_repo
-
-      - name: Verify Segments Playlist
-        run: |
-          if [ ! -s mp3_concat.txt ]; then
-            echo "::error::mp3_concat.txt is empty or missing."
-            exit 1
-          fi
-          echo "Total video segments in playlist: $(wc -l < mp3_concat.txt)"
-
-      - name: Select RTMPS destination & Stream
+      - name: Start Instant Realtime Live Stream
         shell: bash
         env:
           CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
@@ -90,19 +78,6 @@ jobs:
           fi
 
           echo "::add-mask::$STREAM_URL"
-          echo "Starting looped broadcast to $TARGET..."
+          echo "Starting instant live broadcast to $TARGET..."
 
-          trap 'pkill -TERM -x ffmpeg 2>/dev/null || true; wait 2>/dev/null || true; exit 0' INT TERM
-
-          while true; do
-            echo "Streaming MP3 playlist with track cover art..."
-            if ffmpeg -hide_banner -loglevel info \
-              -re -stream_loop -1 -f concat -safe 0 -i mp3_concat.txt \
-              -c copy -f flv "$STREAM_URL"; then
-              echo "FFmpeg ended. Reconnecting in 5 seconds..."
-            else
-              status=$?
-              echo "::warning::FFmpeg exited with status $status; reconnecting in 5 seconds..."
-            fi
-            sleep 5
-          done
+          python3 scripts/live_mp3_streamer.py mp3_repo "$STREAM_URL"
