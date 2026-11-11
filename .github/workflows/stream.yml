@@ -37,9 +37,9 @@ jobs:
           mkdir -p music
           echo "Cloning aishervin/Mp3 repository into music_repo..."
           git clone --depth 1 https://github.com/aishervin/Mp3.git music_repo
-          find music_repo -type f -iname '*.mp3' -exec cp -n {} music/ \\;
-          if ! find music -maxdepth 1 -type f | grep -Eiq '\\.(mp3|m4a|aac|flac|wav|ogg)$'; then
-            echo "::error::No supported audio files were found in aishervin/Mp3."
+          find music_repo -type f -iname '*.mp3' -exec cp -n {} music/ \;
+          if ! compgen -G 'music/*.mp3' > /dev/null; then
+            echo "::error::No MP3 audio files were found in aishervin/Mp3."
             exit 1
           fi
           echo "Prepared $(find music -maxdepth 1 -type f | wc -l) audio files."
