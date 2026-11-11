@@ -1,0 +1,6 @@
+{
+  "name": "Telegram Music Streamer",
+  "description": "Stream music to Telegram Live with automatic audio optimization, playlist management, and live RTMP broadcast controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

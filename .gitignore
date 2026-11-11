@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.local
+.wrangler
+playlist.txt
+.DS_Store
+Thumbs.db
+*.log

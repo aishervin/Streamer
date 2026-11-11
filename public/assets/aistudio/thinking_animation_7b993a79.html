@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SHΞN loader</title>
+  <style>
+    :root {
+      --cell: 25px;
+      --gap: 10px;
+      --on: rgb(296, 285, 263);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #111318;
+      color: #f3f3f3;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    .stage { display: flex; flex-direction: column; align-items: center; gap: 28px; }
+    #timer { position: relative; }
+    .cell {
+      position: absolute;
+      width: var(--cell);
+      height: var(--cell);
+      border-radius: 5px;
+      background: var(--on);
+      will-change: transform;
+    }
+    .label {
+      font-size: 23px;
+      letter-spacing: 0.25em;
+      opacity: 0.55;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div id="timer" role="img" aria-label="SHΞN"></div>
+    <div class="label">‌ S‌‌ H Ξ N</div>
+  </div>
+
+  <script>
+  (() => {
+    const CELL = 25, GAP = 10, COLS = 4, ROWS = 5, DURATION = 8000;
+
+    // الگوها روی شبکه ۴×۵
+    const patterns = {
+      S:  ['1111','1000','1111','0001','1111'],
+      H:  ['1001','1001','1111','1001','1001'],
+      'Ξ':['1111','0000','1111','0000','1111'],
+      N:  ['1001','1101','1011','1001','1001']
+    };
+
+    function litPositions(pattern) {
+      const out = [];
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c < COLS; c++)
+          if (pattern[r][c] === '1') out.push({ r, c });
+      return out;
+    }
+
+    const frames = ['S', 'H', 'Ξ', 'N', 'S'];  // فریم آخر = فریم اول
+    const cellsByFrame = frames.map(f => litPositions(patterns[f]));
+    const numPixels = cellsByFrame[0].length;  // ۱۴ پیکسل (تعداد خونه‌های S)
+
+    // تخصیص یکتا: هر مبدأ به نزدیک‌ترین مقصدِ هنوز آزاد.
+    // اگه مبدأ بیشتر از مقصد باشه، اضافه‌ها روی نزدیک‌ترین مقصد استک می‌شن.
+    function assignUnique(src, tgt) {
+      const pairs = [];
+      for (let i = 0; i < src.length; i++)
+        for (let j = 0; j < tgt.length; j++) {
+          const dr = src[i].r - tgt[j].r;
+          const dc = src[i].c - tgt[j].c;
+          pairs.push({ i, j, d: dr*dr + dc*dc });
+        }
+      pairs.sort((a, b) => a.d - b.d);
+
+      const srcAssigned = new Array(src.length).fill(-1);
+      const tgtUsed = new Array(tgt.length).fill(false);
+      let done = 0;
+
+      for (const p of pairs) {
+        if (srcAssigned[p.i] === -1 && !tgtUsed[p.j]) {
+          srcAssigned[p.i] = p.j;
+          tgtUsed[p.j] = true;
+          if (++done === tgt.length) break;
+        }
+      }
+      // مبدأهای باقی‌مانده → نزدیک‌ترین مقصد
+      for (let i = 0; i < src.length; i++) {
+        if (srcAssigned[i] === -1) {
+          let bj = 0, bd = Infinity;
+          for (let j = 0; j < tgt.length; j++) {
+            const dr = src[i].r - tgt[j].r;
+            const dc = src[i].c - tgt[j].c;
+            const d = dr*dr + dc*dc;
+            if (d < bd) { bd = d; bj = j; }
+          }
+          srcAssigned[i] = bj;
+        }
+      }
+      return srcAssigned;
+    }
+
+    // مسیر هر پیکسل در طول ۵ فریم (S → H → Ξ → N → S)
+    const paths = Array.from({ length: numPixels }, () => []);
+    for (let i = 0; i < numPixels; i++) paths[i].push(cellsByFrame[0][i]);
+
+    for (let f = 0; f < frames.length - 1; f++) {
+      const src = paths.map(p => p[f]);
+      const tgt = cellsByFrame[f + 1];
+      const a = assignUnique(src, tgt);
+      for (let i = 0; i < numPixels; i++) paths[i].push(tgt[a[i]]);
+    }
+
+    // چیدمان
+    const timer = document.getElementById('timer');
+    timer.style.width  = (COLS * CELL + (COLS - 1) * GAP) + 'px';
+    timer.style.height = (ROWS * CELL + (ROWS - 1) * GAP) + 'px';
+    document.documentElement.style.setProperty('--cell', CELL + 'px');
+
+    const px = c => c * (CELL + GAP);
+    const py = r => r * (CELL + GAP);
+    const ease = 'cubic-bezier(.7, 0, .3, 1)';
+
+    // تایم‌لاین: هر حرف ۲۵٪ = ۱۲٪ نگه‌داشتن + ۱۳٪ حرکت
+    const marks = [
+      { hold: 0.00, move: 0.12 },
+      { hold: 0.25, move: 0.37 },
+      { hold: 0.50, move: 0.62 },
+      { hold: 0.75, move: 0.87 },
+    ];
+
+    for (let i = 0; i < numPixels; i++) {
+      const p = paths[i];
+      const el = document.createElement('div');
+      el.className = 'cell';
+      el.style.transform = `translate(${px(p[0].c)}px, ${py(p[0].r)}px)`;
+      timer.appendChild(el);
+
+      const kf = [];
+      for (let f = 0; f < 4; f++) {
+        const pos = p[f];
+        const t = `translate(${px(pos.c)}px, ${py(pos.r)}px)`;
+        // نگه‌داشتن: linear (چون از یک نقطه به همون نقطه‌ست، اثری نداره)
+        kf.push({ transform: t, offset: marks[f].hold, easing: 'linear' });
+        // شروع حرکت: ease
+        kf.push({ transform: t, offset: marks[f].move, easing: ease });
+      }
+      // فریم آخر = فریم اول (S)
+      kf.push({
+        transform: `translate(${px(p[4].c)}px, ${py(p[4].r)}px)`,
+        offset: 1
+      });
+
+      el.animate(kf, { duration: DURATION, iterations: Infinity });
+    }
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+name: Stream MP3 Repo to Telegram
+
+concurrency:
+  group: telegram-stream-live
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      mp3_repo:
+        description: "GitHub MP3 Repository URL"
+        required: true
+        type: string
+        default: "https://github.com/aishervin/Mp3.git"
+      destination:
+        description: "Streaming destination"
+        required: true
+        type: choice
+        options:
+          - channel
+          - group
+          - school
+          - custom
+        default: channel
+      custom_rtmps_url:
+        description: "Custom RTMPS URL (if destination is custom)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  stream_mp3_repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout Streamer Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Clone MP3 Repository
+        run: |
+          echo "Cloning MP3 repository: ${{ inputs.mp3_repo }}..."
+          git clone --depth 1 "${{ inputs.mp3_repo }}" mp3_repo
+
+      - name: Start Instant Realtime Live Stream
+        shell: bash
+        env:
+          CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL }}
+          SCHOOL_URL: ${{ secrets.SCHOOL_RTMPS_URL }}
+          CUSTOM_URL: ${{ inputs.custom_rtmps_url }}
+          TARGET: ${{ inputs.destination }}
+        run: |
+          if [ "$TARGET" = "channel" ]; then
+            STREAM_URL="$CHANNEL_URL"
+          elif [ "$TARGET" = "group" ]; then
+            STREAM_URL="$GROUP_URL"
+          elif [ "$TARGET" = "school" ]; then
+            STREAM_URL="${SCHOOL_URL:-rtmps://dc4-1.rtmp.t.me/s/2600754983:y_AMNoZhfJG_87i8kVLrdA}"
+          elif [ "$TARGET" = "custom" ]; then
+            STREAM_URL="$CUSTOM_URL"
+          else
+            STREAM_URL="$CHANNEL_URL"
+          fi
+
+          if [[ -z "$STREAM_URL" ]]; then
+            echo "::error::Streaming URL is missing for destination $TARGET."
+            exit 1
+          fi
+
+          echo "::add-mask::$STREAM_URL"
+          echo "Starting instant live broadcast to $TARGET..."
+
+          python3 scripts/live_mp3_streamer.py mp3_repo "$STREAM_URL"
