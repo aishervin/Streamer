@@ -1,19 +1,68 @@
-name: Stream GIF
+name: Stream GIF to Telegram Group
+
 on:
   workflow_dispatch:
+  schedule:
+    # Start a new five-hour stream every six hours (approximately one hour offline).
+    - cron: "0 */6 * * *"
+
+concurrency:
+  group: telegram-gif-group-stream
+  cancel-in-progress: true
+
 jobs:
   stream:
     runs-on: ubuntu-latest
+    # GitHub-hosted runners have a six-hour maximum; leave room for setup/cleanup.
+    timeout-minutes: 350
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Stream GIF precisely
-        env:
-          RTMP_URL: ${{ secrets.RTMP_URL }}
         run: |
-          timeout 5h ffmpeg -re -stream_loop -1 -i assets/shen-loader.gif \
-            -vf "pad=1280:720:(ow-iw)/2:(oh-ih)/2" \
-            -c:v libx264 -preset ultrafast -tune zerolatency \
-            -pix_fmt yuv420p -r 30 -g 60 \
-            -f flv "$RTMP_URL" || true
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Validate GIF and group stream secret
+        env:
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL || secrets.RTMP_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s assets/shen-loader.gif || {
+            echo "::error::assets/shen-loader.gif is missing."
+            exit 1
+          }
+          if [[ -z "${GROUP_URL:-}" ]]; then
+            echo "::error::Set GSTREAM_RTMPS_URL (preferred), STREAM_RTMPS_URL, or RTMP_URL in Actions secrets."
+            exit 1
+          fi
+          echo "::add-mask::$GROUP_URL"
+          ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 assets/shen-loader.gif
+          echo "GIF and group RTMPS secret are available."
+
+      - name: Loop GIF live for five hours
+        env:
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL || secrets.RTMP_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$GROUP_URL"
+          # Keep original aspect ratio; fit inside 16:9 and center with black bars.
+          # -stream_loop -1 loops the actual animated GIF, not a still frame.
+          set +e
+          timeout --signal=INT --kill-after=30s 5h ffmpeg \
+            -hide_banner -loglevel info -re -stream_loop -1 \
+            -i assets/shen-loader.gif \
+            -vf "scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30" \
+            -an -c:v libx264 -preset veryfast -tune zerolatency \
+            -pix_fmt yuv420p -r 30 -g 60 -b:v 1800k -maxrate 2000k -bufsize 4000k \
+            -f flv "$GROUP_URL"
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+            echo "::error::FFmpeg exited unexpectedly with status $status."
+            exit "$status"
+          fi
+          echo "Five-hour GIF stream window finished. The next scheduled run starts in the six-hour cycle."
