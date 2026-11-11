@@ -1,0 +1,19 @@
+name: Stream GIF
+on:
+  workflow_dispatch:
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Stream GIF precisely
+        env:
+          RTMP_URL: ${{ secrets.RTMP_URL }}
+        run: |
+          timeout 5h ffmpeg -re -stream_loop -1 -i assets/shen-loader.gif \
+            -vf "pad=1280:720:(ow-iw)/2:(oh-ih)/2" \
+            -c:v libx264 -preset ultrafast -tune zerolatency \
+            -pix_fmt yuv420p -r 30 -g 60 \
+            -f flv "$RTMP_URL" || true
