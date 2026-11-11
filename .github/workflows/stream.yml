@@ -1,71 +1,19 @@
-name: Stream to Telegram
-
-concurrency:
-  group: telegram-stream-live
-  cancel-in-progress: true
-
+name: Stream GIF
 on:
   workflow_dispatch:
-    inputs:
-      destination:
-        description: "Telegram destination"
-        required: true
-        type: choice
-        options:
-          - channel
-          - group
-        default: channel
-
 jobs:
   stream:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
+      - uses: actions/checkout@v4
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Prepare Music Directory (Clone aishervin/Mp3)
-        run: |
-          mkdir -p music
-          echo "Cloning aishervin/Mp3 repository into music_repo..."
-          git clone --depth 1 https://github.com/aishervin/Mp3.git music_repo
-          cp music_repo/*.mp3 music/ 2>/dev/null || true
-
-      - name: Start Instant Realtime Live Stream
-        shell: bash
+      - name: Stream GIF
         env:
-          DESTINATION: ${{ inputs.destination }}
-          CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
-          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL }}
+          RTMP_URL: ${{ secrets.RTSP_URL }}
         run: |
-          set -uo pipefail
-          case "$DESTINATION" in
-            channel)
-              TG_STREAM_URL="$CHANNEL_URL"
-              SECRET_NAME="CSTREAM_RTMPS_URL"
-              ;;
-            group)
-              TG_STREAM_URL="$GROUP_URL"
-              SECRET_NAME="GSTREAM_RTMPS_URL"
-              ;;
-            *)
-              echo "::error::Unsupported destination. Choose channel or group."
-              exit 1
-              ;;
-          esac
-
-          if [[ -z "$TG_STREAM_URL" ]]; then
-            echo "::error::Required GitHub Actions secret $SECRET_NAME is missing."
-            exit 1
-          fi
-          echo "::add-mask::$TG_STREAM_URL"
-
-          python3 scripts/live_mp3_streamer.py music "$TG_STREAM_URL"
+          timeout 5h ffmpeg -re -stream_loop -1 -i assets/shen-loader.gif \
+            -vf "pad=1280:720:(ow-iw)/2:(oh-ih)/2" \
+            -c:v libx264 -preset ultrafast -tune zerolatency \
+            -pix_fmt yuv420p -r 30 -g 60 \
+            -f flv "$RTMP_URK" || true
