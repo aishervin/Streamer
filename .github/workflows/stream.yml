@@ -1,19 +1,83 @@
-name: Stream GIF
+name: Stream to Telegram
+
+concurrency:
+  group: telegram-stream-live
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
+    inputs:
+      destination:
+        description: "Telegram destination"
+        required: true
+        type: choice
+        options:
+          - channel
+          - group
+        default: channel
+
 jobs:
   stream:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Stream GIF
-        env:
-          RTMP_URL: ${{ secrets.RTSP_URL }}
+
+      - name: Prepare Music Directory (Clone aishervin/Mp3)
         run: |
-          timeout 5h ffmpeg -re -stream_loop -1 -i assets/shen-loader.gif \
-            -vf "pad=1280:720:(ow-iw)/2:(oh-ih)/2" \
-            -c:v libx264 -preset ultrafast -tune zerolatency \
-            -pix_fmt yuv420p -r 30 -g 60 \
-            -f flv "$RTMP_URK" || true
+          mkdir -p music
+          echo "Cloning aishervin/Mp3 repository into music_repo..."
+          git clone --depth 1 https://github.com/aishervin/Mp3.git music_repo
+          find music_repo -type f \\( -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.aac' -o -iname '*.flac' -o -iname '*.wav' -o -iname '*.ogg' \\) -exec cp -n {} music/ \\;
+          if ! find music -maxdepth 1 -type f | grep -Eiq '\\.(mp3|m4a|aac|flac|wav|ogg)$'; then
+            echo "::error::No supported audio files were found in aishervin/Mp3."
+            exit 1
+          fi
+          echo "Prepared $(find music -maxdepth 1 -type f | wc -l) audio files."
+
+      - name: Validate video streamer
+        run: |
+          python3 -m py_compile scripts/live_mp3_streamer.py
+          test -s assets/background.jpg
+          ffmpeg -hide_banner -loglevel error -y -i assets/background.jpg -frames:v 1 /tmp/streamer-video-check.png
+          test -s /tmp/streamer-video-check.png
+          echo "Video fallback image validated."
+
+      - name: Start Instant Realtime Live Stream
+        shell: bash
+        env:
+          DESTINATION: ${{ inputs.destination }}
+          CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL }}
+        run: |
+          set -euo pipefail
+          case "$DESTINATION" in
+            channel)
+              TG_STREAM_URL="$CHANNEL_URL"
+              SECRET_NAME="CSTREAM_RTMPS_URL"
+              ;;
+            group)
+              TG_STREAM_URL="$GROUP_URL"
+              SECRET_NAME="GSTREAM_RTMPS_URL (or STREAM_RTMPS_URL)"
+              ;;
+            *)
+              echo "::error::Unsupported destination. Choose channel or group."
+              exit 1
+              ;;
+          esac
+
+          if [[ -z "$TG_STREAM_URL" ]]; then
+            echo "::error::Required GitHub Actions secret $SECRET_NAME is missing."
+            exit 1
+          fi
+          echo "::add-mask::$TG_STREAM_URL"
+          python3 -u scripts/live_mp3_streamer.py music "$TG_STREAM_URL"
