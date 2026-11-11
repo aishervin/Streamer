@@ -37,7 +37,7 @@ jobs:
           mkdir -p music
           echo "Cloning aishervin/Mp3 repository into music_repo..."
           git clone --depth 1 https://github.com/aishervin/Mp3.git music_repo
-          find music_repo -type f \\( -iname '*.mp3' -o -iname '*.m4a' -o -iname '*.aac' -o -iname '*.flac' -o -iname '*.wav' -o -iname '*.ogg' \\) -exec cp -n {} music/ \\;
+          find music_repo -type f -iname '*.mp3' -exec cp -n {} music/ \\;
           if ! find music -maxdepth 1 -type f | grep -Eiq '\\.(mp3|m4a|aac|flac|wav|ogg)$'; then
             echo "::error::No supported audio files were found in aishervin/Mp3."
             exit 1
