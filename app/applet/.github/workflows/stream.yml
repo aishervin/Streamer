@@ -15,7 +15,7 @@ jobs:
           while true; do
             # Run for 5 hours
             timeout 5h ffmpeg -re -stream_loop -1 -i assets/shen-loader.gif \
-              -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1" \
+              -vf "pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1" \
               -c:v libx264 -preset ultrafast -tune zerolatency \
               -pix_fmt yuv420p -r 30 -g 60 -aspect 16:9 \
               -f flv "$RTMP_URL" || true
