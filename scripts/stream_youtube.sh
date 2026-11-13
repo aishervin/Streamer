@@ -24,13 +24,13 @@ PLAYER_ARGS=()
 if [ -n "$YOUTUBE_COOKIES" ]; then
   echo "Found YOUTUBE_COOKIES secret, configuring authentication..."
   if echo "$YOUTUBE_COOKIES" | grep -q "Netscape HTTP Cookie File"; then
-    printf "%s\n" "$YOUTUBE_COOKIES" > /tmp/youtube_cookies.txt
+    printf "%s\n" "$YOUTUBE_COOKIES" | tr -d '\r' > /tmp/youtube_cookies.txt
   else
-    echo "$YOUTUBE_COOKIES" | base64 -d > /tmp/youtube_cookies.txt 2>/dev/null || printf "%s\n" "$YOUTUBE_COOKIES" > /tmp/youtube_cookies.txt
+    (echo "$YOUTUBE_COOKIES" | base64 -d 2>/dev/null || printf "%s\n" "$YOUTUBE_COOKIES") | tr -d '\r' > /tmp/youtube_cookies.txt
   fi
   if [ -s /tmp/youtube_cookies.txt ]; then
     COOKIE_ARGS=("--cookies" "/tmp/youtube_cookies.txt")
-    echo "Cookies configured for yt-dlp authentication."
+    echo "Cookies configured for yt-dlp authentication ($(wc -l < /tmp/youtube_cookies.txt) lines)."
   fi
 elif [ -f "cookies.txt" ]; then
   COOKIE_ARGS=("--cookies" "cookies.txt")
@@ -39,6 +39,8 @@ else
   PLAYER_ARGS=(--extractor-args "youtube:player-client=mweb,tv,web_safari")
   echo "No cookies provided; using anonymous PO-token client mode."
 fi
+
+NODE_BIN="$(command -v node || echo node)"
 
 # Determine resolution parameters
 if [ "$QUALITY" = "1080p" ]; then
@@ -144,7 +146,7 @@ while true; do
       if [ -n "$line" ]; then
         VIDEO_IDS+=("$line")
       fi
-    done < <(yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" --js-runtimes node --flat-playlist --print id "$PLAYLIST_URL" | head -n "$MAX_VIDEOS" || true)
+    done < <(yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" --js-runtimes "node:${NODE_BIN}" --flat-playlist --print id "$PLAYLIST_URL" | head -n "$MAX_VIDEOS" || true)
   fi
 
   if [ ${#VIDEO_IDS[@]} -eq 0 ]; then
@@ -165,32 +167,27 @@ while true; do
     echo "Downloading video clip with original audio..."
     DOWNLOAD_SUCCESS=false
 
-    # Check if local POT provider service is running
-    POT_ARGS=()
-    if curl -s http://127.0.0.1:4416/ping 2>/dev/null | grep -iq "pong"; then
-      POT_ARGS=("--extractor-args" "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416")
-    fi
-
-    # Try 1: prefer original audio track + <= MAX_H video
-    if yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" "${POT_ARGS[@]}" \
-      --js-runtimes node \
+    # Try 1: clean cookie + Node JS runtime (matches verified working configuration)
+    if yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" \
+      --js-runtimes "node:${NODE_BIN}" \
       --socket-timeout 35 \
       --merge-output-format mp4 \
       -f "bestvideo[height<=$MAX_H]+bestaudio[format_note*=original]/bestvideo[height<=$MAX_H]+bestaudio[language^=fa]/best[height<=$MAX_H][format_note*=original]/best[height<=$MAX_H][ext=mp4]/bestvideo[height<=$MAX_H]+bestaudio/best[height<=$MAX_H]/best" \
-      --no-warnings --no-playlist \
+      --no-playlist \
       -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
       DOWNLOAD_SUCCESS=true
     fi
 
-    # Try 2: fallback format
+    # Try 2: remote ejs + generic fallback formats
     if [ "$DOWNLOAD_SUCCESS" = false ]; then
-      echo "Standard format download challenged, attempting fallback formats..."
-      if yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" "${POT_ARGS[@]}" \
-        --js-runtimes node \
+      echo "Standard format download challenged, attempting fallback with remote ejs..."
+      if yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" \
+        --js-runtimes "node:${NODE_BIN}" \
+        --remote-components ejs:github \
         --socket-timeout 35 \
         --merge-output-format mp4 \
         -f "b/bv+ba/best" \
-        --no-warnings --no-playlist \
+        --no-playlist \
         -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
         DOWNLOAD_SUCCESS=true
       fi
