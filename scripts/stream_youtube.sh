@@ -18,30 +18,10 @@ echo "Max videos: $MAX_VIDEOS"
 echo "Quality: $QUALITY"
 echo "========================================="
 
-# Setup cookies if provided in environment
+# Anonymous mode: never read or require YouTube cookies.
 COOKIE_ARGS=()
-if [ -n "$YOUTUBE_COOKIES" ]; then
-  echo "Found YOUTUBE_COOKIES secret, decoding..."
-  echo "$YOUTUBE_COOKIES" | base64 -d > /tmp/youtube_cookies.txt 2>/dev/null || echo "$YOUTUBE_COOKIES" > /tmp/youtube_cookies.txt
-  if [ -s /tmp/youtube_cookies.txt ]; then
-    COOKIE_ARGS=("--cookies" "/tmp/youtube_cookies.txt")
-    echo "Cookies configured for yt-dlp authentication."
-  fi
-elif [ -f "cookies.txt" ]; then
-  COOKIE_ARGS=("--cookies" "cookies.txt")
-  echo "Found local cookies.txt file."
-fi
-
-# YouTube may require an authenticated session for this video/IP.
-# Fail early instead of retrying the same bot-check forever.
-if [ ${#COOKIE_ARGS[@]} -eq 0 ]; then
-  echo "::error::YouTube requires sign-in cookies for this video. Add a fresh Netscape-format cookies.txt as the YOUTUBE_COOKIES GitHub Actions secret."
-  exit 1
-fi
-if [ ! -s "${COOKIE_ARGS[1]}" ]; then
-  echo "::error::YOUTUBE_COOKIES is empty or could not be decoded. Re-export cookies in Netscape format."
-  exit 1
-fi
+PLAYER_ARGS=(--extractor-args "youtube:player-client=mweb,tv,web_safari")
+echo "YouTube authentication: disabled (anonymous PO-token mode)."
 
 # Determine resolution parameters
 if [ "$QUALITY" = "1080p" ]; then
@@ -130,7 +110,7 @@ while true; do
       if [ -n "$line" ]; then
         VIDEO_IDS+=("$line")
       fi
-    done < <(yt-dlp "${COOKIE_ARGS[@]}" --flat-playlist --print id "$PLAYLIST_URL" 2>/dev/null | head -n "$MAX_VIDEOS" || true)
+    done < <(yt-dlp "${PLAYER_ARGS[@]}" --flat-playlist --print id "$PLAYLIST_URL" 2>/dev/null | head -n "$MAX_VIDEOS" || true)
   fi
 
   if [ ${#VIDEO_IDS[@]} -eq 0 ]; then
