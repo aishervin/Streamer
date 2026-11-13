@@ -11,7 +11,7 @@ on:
         description: "YouTube Playlist URL or Video URL"
         required: true
         type: string
-        default: "https://youtu.be/GHT2dpciTzg"
+        default: "https://www.youtube.com/watch?v=GHT2dpciTzg"
       destination:
         description: "Streaming destination"
         required: true
@@ -71,7 +71,7 @@ jobs:
         run: |
           echo "Starting bgutil POT Provider container..."
           docker run --name bgutil-provider -d --init -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider || true
-          for i in $(seq 1 10); do
+          for i in $(seq 1 20); do
             if curl -s http://127.0.0.1:4416/ping 2>/dev/null | grep -iq "pong"; then
               echo "POT Provider is ready on port 4416!"
               break
@@ -84,7 +84,7 @@ jobs:
         shell: bash
         env:
           CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
-          GROUP_URL: ${{ secrets.STREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL }}
           SCHOOL_URL: ${{ secrets.SCHOOL_RTMPS_URL }}
           CUSTOM_URL: ${{ inputs.custom_rtmps_url }}
           TARGET: ${{ inputs.destination }}
@@ -112,6 +112,7 @@ jobs:
           PLAYLIST_URL: ${{ inputs.playlist_url }}
           QUALITY: ${{ inputs.quality }}
           MAX_VIDEOS: ${{ inputs.max_videos }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YOUTUBE_OAUTH_TOKEN: ${{ secrets.YOUTUBE_OAUTH_TOKEN }}
         shell: bash
