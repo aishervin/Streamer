@@ -32,6 +32,17 @@ elif [ -f "cookies.txt" ]; then
   echo "Found local cookies.txt file."
 fi
 
+# YouTube may require an authenticated session for this video/IP.
+# Fail early instead of retrying the same bot-check forever.
+if [ ${#COOKIE_ARGS[@]} -eq 0 ]; then
+  echo "::error::YouTube requires sign-in cookies for this video. Add a fresh Netscape-format cookies.txt as the YOUTUBE_COOKIES GitHub Actions secret."
+  exit 1
+fi
+if [ ! -s "${COOKIE_ARGS[1]}" ]; then
+  echo "::error::YOUTUBE_COOKIES is empty or could not be decoded. Re-export cookies in Netscape format."
+  exit 1
+fi
+
 # Determine resolution parameters
 if [ "$QUALITY" = "1080p" ]; then
   SCALE="1920:1080"
