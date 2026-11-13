@@ -55,29 +55,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Set up Node.js (for YouTube challenge solver)
+      - name: Set up Node.js 22 (for YouTube JS challenge solver)
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
-      - name: Install Dependencies (ffmpeg, latest yt-dlp & token providers)
+      - name: Install Dependencies (ffmpeg & standalone yt-dlp)
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade "yt-dlp[default]" yt-dlp-ejs
-          python -m pip install --upgrade "bgutil-ytdlp-pot-provider" 2>/dev/null || true
-
-      - name: Start YouTube Bot-Bypass Token Provider
-        run: |
-          echo "Starting bgutil POT Provider container..."
-          docker run --name bgutil-provider -d --init -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider || true
-          for i in $(seq 1 20); do
-            if curl -s http://127.0.0.1:4416/ping 2>/dev/null | grep -iq "pong"; then
-              echo "POT Provider is ready on port 4416!"
-              break
-            fi
-            sleep 1
-          done
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp
+          sudo chmod +x /usr/local/bin/yt-dlp
+          yt-dlp --version
+          node --version
+          which node
 
       - name: Select RTMPS destination
         id: destination
