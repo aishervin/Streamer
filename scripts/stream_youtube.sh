@@ -125,11 +125,16 @@ while true; do
     done <<< "$NODE_VIDS"
   fi
 
-  # Extract single video ID directly if URL is a watch/youtu.be link without list=
+  # Extract single video ID directly if URL is a watch/youtu.be/shorts/live link without list=
   if [ ${#VIDEO_IDS[@]} -eq 0 ]; then
-    DIRECT_ID=$(echo "$PLAYLIST_URL" | grep -oE "(?:v=|youtu\.be/|/shorts/|/live/)([a-zA-Z0-9_-]{11})" | sed -E 's/.*(v=|youtu\.be\/|\/shorts\/|\/live\/)//' | head -n 1 || true)
+    DIRECT_ID=$(node -e '
+      const u = (process.argv[1] || "").trim();
+      const m = u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|(?:embed|v|shorts|live)\/))([a-zA-Z0-9_-]{11})/) || u.match(/^([a-zA-Z0-9_-]{11})$/);
+      if (m) console.log(m[1]);
+    ' "$PLAYLIST_URL" 2>/dev/null || true)
     if [ -n "$DIRECT_ID" ] && [ -z "$PLAYLIST_ID" ]; then
       VIDEO_IDS=("$DIRECT_ID")
+      echo "Extracted single video ID: $DIRECT_ID"
     fi
   fi
 
@@ -139,11 +144,11 @@ while true; do
       if [ -n "$line" ]; then
         VIDEO_IDS+=("$line")
       fi
-    done < <(yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" --flat-playlist --print id "$PLAYLIST_URL" 2>/dev/null | head -n "$MAX_VIDEOS" || true)
+    done < <(yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" --js-runtimes node --flat-playlist --print id "$PLAYLIST_URL" | head -n "$MAX_VIDEOS" || true)
   fi
 
   if [ ${#VIDEO_IDS[@]} -eq 0 ]; then
-    echo "No videos found. Retrying in 10s..."
+    echo "No videos found for source: $PLAYLIST_URL. Retrying in 10s..."
     sleep 10
     continue
   fi
@@ -205,16 +210,17 @@ while true; do
 
     ls -lh "$CLIP_FILE"
     echo "Streaming actual video ($CLIP_FILE) to Telegram Live with 25fps..."
+    FFMPEG_EXIT=0
     ffmpeg -hide_banner -loglevel warning -stats \
       -re -i "$CLIP_FILE" \
       -vf "scale=${SCALE}:force_original_aspect_ratio=decrease,pad=${SCALE}:(ow-iw)/2:(oh-ih)/2,setsar=1" \
       -c:v libx264 -preset veryfast -pix_fmt yuv420p -r 25 -g 50 -keyint_min 50 \
       -b:v "$VBITRATE" -maxrate "$MAXRATE" -bufsize "$BUFSIZE" \
       -c:a aac -b:a 128k -ar 44100 -ac 2 \
-      -f flv "$TG_STREAM_URL" || true
+      -f flv "$TG_STREAM_URL" || FFMPEG_EXIT=$?
 
     rm -f current_clip.*
-    echo "Finished streaming $vid."
+    echo "Finished streaming $vid (ffmpeg exit code: $FFMPEG_EXIT)."
     sleep 1
   done
 
