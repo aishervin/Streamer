@@ -19,7 +19,6 @@ echo "Quality: $QUALITY"
 echo "========================================="
 
 # Anonymous mode: never read or require YouTube cookies.
-COOKIE_ARGS=()
 PLAYER_ARGS=(--extractor-args "youtube:player-client=mweb,tv,web_safari")
 echo "YouTube authentication: disabled (anonymous PO-token mode)."
 
@@ -146,7 +145,7 @@ while true; do
     fi
 
     # Try 1: with POT token provider & Node JS runtime solver
-    if yt-dlp "${COOKIE_ARGS[@]}" "${POT_ARGS[@]}" \
+    if yt-dlp "${PLAYER_ARGS[@]}" "${POT_ARGS[@]}" \
       --js-runtimes node \
       --socket-timeout 35 \
       -f "best[height<=$MAX_H][ext=mp4]/bestvideo[height<=$MAX_H]+bestaudio/best[height<=$MAX_H]/best" \
@@ -158,7 +157,7 @@ while true; do
     # Try 2: fallback format with POT provider
     if [ "$DOWNLOAD_SUCCESS" = false ]; then
       echo "Standard format download challenged, attempting fallback formats..."
-      if yt-dlp "${COOKIE_ARGS[@]}" "${POT_ARGS[@]}" \
+      if yt-dlp "${PLAYER_ARGS[@]}" "${POT_ARGS[@]}" \
         --js-runtimes node \
         --socket-timeout 35 \
         -f "b/bv+ba/best" \
