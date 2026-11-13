@@ -309,13 +309,13 @@ export const GitHubActionsControl: React.FC<GitHubActionsControlProps> = () => {
           <div className="space-y-2.5 pt-2 border-t border-zinc-800/80">
             {/* Playlist URL input */}
             <div>
-              <label className="text-[11px] text-zinc-400 block mb-1">لینک یا شناسه پلی‌لیست یوتیوب:</label>
+              <label className="text-[11px] text-zinc-400 block mb-1">لینک ویدیو یا پلی‌لیست یوتیوب:</label>
               <input
                 type="text"
                 value={ytPlaylistUrl}
                 onChange={e => setYtPlaylistUrl(e.target.value)}
-                placeholder="https://www.youtube.com/playlist?list=..."
-                className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 focus:outline-none focus:border-red-500"
+                placeholder="https://www.youtube.com/watch?v=... یا https://www.youtube.com/playlist?list=..."
+                className="w-full px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 focus:outline-none focus:border-red-500 dir-ltr font-mono"
               />
             </div>
 
