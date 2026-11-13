@@ -196,8 +196,8 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     }
   }, []);
 
-  // Fetch playlist metadata from server
-  const fetchPlaylistDetails = useCallback(async (query: string) => {
+  // Fetch playlist or single video metadata from server
+  const fetchPlaylistDetails = useCallback(async (query: string): Promise<YouTubePlaylistData | null> => {
     setIsLoadingMetadata(true);
     setErrorMessage(null);
     try {
@@ -207,28 +207,26 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
         setPlaylistData(data);
         setCurrentType(data.type);
         setCurrentPlaylistId(data.id);
+        setCurrentTrackIndex(0);
         if (data.items && data.items.length > 0) {
           setCurrentTrackTitle(data.items[0].title);
           setCurrentTrackAuthor(data.items[0].author);
           setActiveVideoId(data.items[0].id);
+        } else if (data.type === 'video') {
+          setActiveVideoId(data.id);
         }
+        return data;
       } else {
-        setErrorMessage(data.error || 'پلی‌لیست یافت نشد. شناسه یا لینک را بررسی کنید.');
+        setErrorMessage(data.error || 'ویدیو یا پلی‌لیست یافت نشد. شناسه یا لینک را بررسی کنید.');
+        return null;
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'خطا در ارتباط با سرور جهت دریافت جزئیات پلی‌لیست');
+      setErrorMessage(err.message || 'خطا در ارتباط با سرور جهت دریافت جزئیات');
+      return null;
     } finally {
       setIsLoadingMetadata(false);
     }
   }, []);
-
-  // Sync external playlist selection (e.g. from YouTube OAuth tab)
-  useEffect(() => {
-    if (externalPlaylistId) {
-      setInputUrl(externalPlaylistId);
-      fetchPlaylistDetails(externalPlaylistId);
-    }
-  }, [externalPlaylistId, fetchPlaylistDetails]);
 
   // Initialize or update YouTube Player
   const initPlayer = useCallback((playlistId: string, type: 'playlist' | 'video', initialVideoId?: string, shouldAutoPlay: boolean = false) => {
@@ -240,13 +238,13 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     const container = playerContainerRef.current;
     if (!container) return;
 
-    const vId = initialVideoId || activeVideoId;
+    const vId = initialVideoId || (type === 'video' ? playlistId : activeVideoId);
 
-    // If player already exists and healthy, reuse player
+    // If player already exists and we're loading a single video or playlist, load directly when compatible
     if (playerRef.current && (typeof playerRef.current.loadVideoById === 'function' || typeof playerRef.current.cueVideoById === 'function')) {
       try {
-        if (shouldAutoPlay) {
-          if (vId && typeof playerRef.current.loadVideoById === 'function') {
+        if (type === 'video' && vId) {
+          if (shouldAutoPlay && typeof playerRef.current.loadVideoById === 'function') {
             playerRef.current.loadVideoById({
               videoId: vId,
               suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
@@ -254,7 +252,16 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
             playerRef.current.playVideo();
             setIsPlaying(true);
             return;
-          } else if (type === 'playlist' && typeof playerRef.current.loadPlaylist === 'function') {
+          } else if (typeof playerRef.current.cueVideoById === 'function') {
+            playerRef.current.cueVideoById({
+              videoId: vId,
+              suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
+            });
+            setIsPlaying(false);
+            return;
+          }
+        } else if (type === 'playlist') {
+          if (shouldAutoPlay && typeof playerRef.current.loadPlaylist === 'function') {
             playerRef.current.loadPlaylist({
               list: playlistId,
               listType: 'playlist',
@@ -264,17 +271,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
             playerRef.current.playVideo();
             setIsPlaying(true);
             return;
-          }
-        } else {
-          // Cue without playing automatically
-          if (vId && typeof playerRef.current.cueVideoById === 'function') {
-            playerRef.current.cueVideoById({
-              videoId: vId,
-              suggestedQuality: selectedQuality === 'auto' ? 'default' : selectedQuality,
-            });
-            setIsPlaying(false);
-            return;
-          } else if (type === 'playlist' && typeof playerRef.current.cuePlaylist === 'function') {
+          } else if (typeof playerRef.current.cuePlaylist === 'function') {
             playerRef.current.cuePlaylist({
               list: playlistId,
               listType: 'playlist',
@@ -357,7 +354,14 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
             setIsPlaying(false);
           } else if (event.data === 0) {
             if (isLooping) {
-              try { event.target.nextVideo(); } catch {}
+              try {
+                if (type === 'video' && vId) {
+                  event.target.seekTo(0);
+                  event.target.playVideo();
+                } else {
+                  event.target.nextVideo();
+                }
+              } catch {}
             }
           }
         },
@@ -369,12 +373,14 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
         onError: (event: any) => {
           console.warn('YouTube Player error event:', event.data);
           if (event.data === 150 || event.data === 101) {
-            setErrorMessage('این ویدیو به دلیل محدودیت کپی‌رایت سازنده در وب‌سایت‌های خارجی مسدود است؛ در حال انتقال به ویدیوی بعدی...');
-            setTimeout(() => {
-              if (playerRef.current && typeof playerRef.current.nextVideo === 'function') {
-                playerRef.current.nextVideo();
-              }
-            }, 1200);
+            setErrorMessage('این ویدیو در پیش‌نمایش مرورگر محدودیت نمایش خارجی دارد، اما استریم مستقیم آن به تلگرام بدون مشکل کار می‌کند.');
+            if (type === 'playlist') {
+              setTimeout(() => {
+                if (playerRef.current && typeof playerRef.current.nextVideo === 'function') {
+                  playerRef.current.nextVideo();
+                }
+              }, 1200);
+            }
           }
         },
       },
@@ -391,15 +397,28 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     }
   }, [activeVideoId, selectedQuality, isLooping, volume, isMuted]);
 
-  // Initial load - explicitly disabled autoplay
+  // Initial mount load (runs once on mount; URL loads and preset clicks call initPlayer explicitly)
+  const mountedRef = useRef(false);
   useEffect(() => {
-    fetchPlaylistDetails(currentPlaylistId);
-    const timer = setTimeout(() => {
-      initPlayer(currentPlaylistId, currentType, undefined, false);
-    }, 500);
-
-    return () => clearTimeout(timer);
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+    fetchPlaylistDetails(currentPlaylistId).then((data) => {
+      const firstId = data?.items?.[0]?.id;
+      initPlayer(data?.id || currentPlaylistId, data?.type || currentType, firstId, false);
+    });
   }, [fetchPlaylistDetails, initPlayer, currentPlaylistId, currentType]);
+
+  // Sync external playlist selection (e.g. from YouTube OAuth tab)
+  useEffect(() => {
+    if (externalPlaylistId) {
+      setInputUrl(externalPlaylistId);
+      fetchPlaylistDetails(externalPlaylistId).then((data) => {
+        if (data?.id) {
+          initPlayer(data.id, data.type, data.items?.[0]?.id, false);
+        }
+      });
+    }
+  }, [externalPlaylistId, fetchPlaylistDetails, initPlayer]);
 
   // Handle Quality Selection
   const handleQualityChange = (qualityId: string) => {
@@ -563,12 +582,11 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     const query = inputUrl.trim();
     if (!query) return;
 
-    await fetchPlaylistDetails(query);
-    // Determine type and load
-    const listMatch = query.match(/[?&]list=([a-zA-Z0-9_-]+)/);
-    const isPlaylist = Boolean(listMatch) || query.startsWith('PL') || query.startsWith('RD');
-    const newId = listMatch ? listMatch[1] : query;
-    initPlayer(newId, isPlaylist ? 'playlist' : 'video', undefined, isAutoPlay);
+    const data = await fetchPlaylistDetails(query);
+    if (data && data.id) {
+      const firstId = data.items?.[0]?.id || (data.type === 'video' ? data.id : undefined);
+      initPlayer(data.id, data.type, firstId, true);
+    }
   };
 
   // Bookmark current playlist
@@ -589,14 +607,22 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     }
   };
 
+  const resolveActiveYouTubeUrl = () => {
+    if (currentType === 'video') {
+      const vid = activeVideoId || currentPlaylistId;
+      return `https://www.youtube.com/watch?v=${vid}`;
+    }
+    return currentPlaylistId.startsWith('http')
+      ? currentPlaylistId
+      : `https://www.youtube.com/playlist?list=${currentPlaylistId}`;
+  };
+
   // Start GitHub Actions YouTube Stream (Full Video & Audio)
   const handleStartGitHubStream = async () => {
     setIsRelaying(true);
     setRelayMessage(null);
     try {
-      const targetUrl = currentPlaylistId.startsWith('http')
-        ? currentPlaylistId
-        : `https://www.youtube.com/playlist?list=${currentPlaylistId}`;
+      const targetUrl = resolveActiveYouTubeUrl();
 
       const res = await fetch('/api/github/dispatch-youtube-stream', {
         method: 'POST',
@@ -606,7 +632,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
           destination,
           customUrl: destination === 'custom' ? customRtmp : undefined,
           quality: relayQuality,
-          maxVideos: 25,
+          maxVideos: currentType === 'video' ? 1 : 25,
         }),
       });
       const data = await res.json();
@@ -628,7 +654,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
     setIsRelaying(true);
     setRelayMessage(null);
     try {
-      const targetYouTube = currentPlaylistId || inputUrl || 'PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj';
+      const targetYouTube = resolveActiveYouTubeUrl();
       const res = await fetch('/api/stream/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -642,7 +668,7 @@ export const YouTubePlaylistPlayer: React.FC<YouTubePlaylistPlayerProps> = ({
       });
       const data = await res.json();
       if (res.ok) {
-        setRelayMessage('استریم تصویری و مستقیم یوتیوب روی تلگرام با موفقیت آغاز شد! ویدیوها با تصویر متحرک و صدای کامل در حال ارسال هستند.');
+        setRelayMessage('استریم تصویری و مستقیم یوتیوب روی تلگرام با موفقیت آغاز شد! ویدیو با تصویر متحرک و صدای اصلی در حال ارسال است.');
         if (onRefreshStatus) onRefreshStatus();
       } else {
         setRelayMessage(data.error || 'خطا در برقراری استریم تلگرام');
