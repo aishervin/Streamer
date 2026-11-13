@@ -11,7 +11,7 @@ on:
         description: "YouTube Playlist URL or Video URL"
         required: true
         type: string
-        default: "https://www.youtube.com/playlist?list=PLDIoUOhQQPlXr63I_vwF9GD8sAKh77dWU"
+        default: "https://youtu.be/GHT2dpciTzg"
       destination:
         description: "Streaming destination"
         required: true
@@ -35,12 +35,12 @@ on:
           - 720p
           - 480p
           - 1080p
-        default: 720p
+        default: 480p
       max_videos:
         description: "Maximum videos to queue from playlist"
         required: false
         type: string
-        default: "20"
+        default: "1"
 
 jobs:
   stream_youtube:
@@ -94,14 +94,15 @@ jobs:
           elif [ "$TARGET" = "group" ]; then
             STREAM_URL="$GROUP_URL"
           elif [ "$TARGET" = "school" ]; then
-            STREAM_URL="${SCHOOL_URL:-rtmps://dc4-1.rtmp.t.me/s/2600754983:y_AMNoZhfJG_87i8kVLrdA}"
+            STREAM_URL="$SCHOOL_URL"
           elif [ "$TARGET" = "custom" ]; then
             STREAM_URL="$CUSTOM_URL"
           else
             STREAM_URL="$CHANNEL_URL"
           fi
           if [ -z "$STREAM_URL" ]; then
-            STREAM_URL="rtmps://dc4-1.rtmp.t.me/s/2600754983:y_AMNoZhfJG_87i8kVLrdA"
+            echo "::error::Missing RTMPS destination secret for target: $TARGET"
+            exit 1
           fi
           echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
 
