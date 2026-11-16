@@ -1,0 +1,114 @@
+name: Stream GIF to Telegram Channel + Group
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: telegram-gif-both-destinations
+  cancel-in-progress: true
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    # One cycle: 5h live + 30m rest. GitHub-hosted runner limit is 6h.
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Validate GIF and both RTMPS destinations
+        shell: bash
+        env:
+          CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL }}
+        run: |
+          set -euo pipefail
+          test -s assets/shen-loader.gif || {
+            echo "::error::assets/shen-loader.gif is missing."
+            exit 1
+          }
+          [[ -n "${CHANNEL_URL:-}" ]] || {
+            echo "::error::Missing Actions secret CSTREAM_RTMPS_URL (Telegram channel)."
+            exit 1
+          }
+          [[ -n "${GROUP_URL:-}" ]] || {
+            echo "::error::Missing Actions secret GSTREAM_RTMPS_URL or STREAM_RTMPS_URL (Telegram group)."
+            exit 1
+          }
+          echo "::add-mask::$CHANNEL_URL"
+          echo "::add-mask::$GROUP_URL"
+          ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 assets/shen-loader.gif
+          echo "GIF and both RTMPS destinations are configured."
+
+      - name: Stream the animated GIF to both destinations for five hours
+        shell: bash
+        env:
+          CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL }}
+        run: |
+          set -uo pipefail
+          echo "::add-mask::$CHANNEL_URL"
+          echo "::add-mask::$GROUP_URL"
+
+          # Run one independent FFmpeg publisher per destination so a failure
+          # on the channel does not prevent the group stream (or vice versa).
+          stream_to() {
+            local destination="$1"
+            local url="$2"
+            echo "Starting five-hour GIF stream: $destination"
+            timeout --signal=INT --kill-after=30s 5h ffmpeg \
+              -hide_banner -loglevel info -re -stream_loop -1 \
+              -i assets/shen-loader.gif \
+              -vf "scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30" \
+              -an -c:v libx264 -preset veryfast -tune zerolatency \
+              -pix_fmt yuv420p -r 30 -g 60 -b:v 1800k -maxrate 2000k -bufsize 4000k \
+              -f flv "$url"
+            local rc=$?
+            if [[ "$rc" -eq 124 || "$rc" -eq 0 || "$rc" -eq 130 ]]; then
+              echo "$destination stream window finished (status $rc)."
+              return 0
+            fi
+            echo "::warning::$destination FFmpeg exited early with status $rc."
+            return 0
+          }
+
+          stream_to "Telegram channel" "$CHANNEL_URL" &
+          channel_pid=$!
+          stream_to "Telegram group" "$GROUP_URL" &
+          group_pid=$!
+
+          wait "$channel_pid"
+          wait "$group_pid"
+          echo "Five-hour streaming window completed."
+
+      - name: Rest for thirty minutes
+        run: |
+          echo "Both destinations are resting for 30 minutes before the next cycle."
+          sleep 1800
+
+      - name: Queue the next five-hour stream cycle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Queueing the next cycle. Cancel this workflow run during streaming or rest to stop the loop."
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPOSITORY/actions/workflows/stream-gif-both.yml/dispatches" \
+            -d "{\"ref\":\"$REF_NAME\"}"
+          echo "Next cycle queued successfully."
