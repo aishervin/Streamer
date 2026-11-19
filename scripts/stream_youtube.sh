@@ -16,6 +16,7 @@ echo "YouTube Playlist to Telegram Streamer"
 echo "Source: $PLAYLIST_URL"
 echo "Max videos: $MAX_VIDEOS"
 echo "Quality: $QUALITY"
+echo "Audio language: English (en)"
 echo "========================================="
 
 # Setup cookies if provided in environment
@@ -164,7 +165,7 @@ while true; do
 
     rm -f current_clip.*
 
-    echo "Downloading video clip with original audio..."
+    echo "Downloading video clip with English audio track only..."
     DOWNLOAD_SUCCESS=false
 
     # Try 1: clean cookie + Node JS runtime (matches verified working configuration)
@@ -172,7 +173,7 @@ while true; do
       --js-runtimes "node:${NODE_BIN}" \
       --socket-timeout 35 \
       --merge-output-format mp4 \
-      -f "bestvideo[height<=$MAX_H]+bestaudio[format_note*=original]/bestvideo[height<=$MAX_H]+bestaudio[language^=fa]/best[height<=$MAX_H][format_note*=original]/best[height<=$MAX_H][ext=mp4]/bestvideo[height<=$MAX_H]+bestaudio/best[height<=$MAX_H]/best" \
+      -f "bestvideo[height<=$MAX_H]+bestaudio[language^=en]/best[height<=$MAX_H][language^=en]" \
       --no-playlist \
       -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
       DOWNLOAD_SUCCESS=true
@@ -180,13 +181,13 @@ while true; do
 
     # Try 2: remote ejs + generic fallback formats
     if [ "$DOWNLOAD_SUCCESS" = false ]; then
-      echo "Standard format download challenged, attempting fallback with remote ejs..."
+      echo "Standard download challenged; retrying with remote ejs (English audio required)..."
       if yt-dlp "${COOKIE_ARGS[@]}" "${PLAYER_ARGS[@]}" \
         --js-runtimes "node:${NODE_BIN}" \
         --remote-components ejs:github \
         --socket-timeout 35 \
         --merge-output-format mp4 \
-        -f "b/bv+ba/best" \
+        -f "bestvideo[height<=$MAX_H]+bestaudio[language^=en]/best[height<=$MAX_H][language^=en]" \
         --no-playlist \
         -o "current_clip.%(ext)s" "https://www.youtube.com/watch?v=$vid"; then
         DOWNLOAD_SUCCESS=true
@@ -194,7 +195,7 @@ while true; do
     fi
 
     if [ "$DOWNLOAD_SUCCESS" = false ]; then
-      echo "Failed to download $vid with available clients, skipping to next..."
+      echo "No downloadable English audio track found for $vid; refusing Hindi/other-language fallback and skipping..."
       sleep 5
       continue
     fi
