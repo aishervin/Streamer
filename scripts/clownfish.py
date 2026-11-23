@@ -12,9 +12,10 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HANDLE = '@ascii.lab'
 
-W, H, FPS = 1080, 1920, 30
-CW, CH, COLS = 12, 18, 90
-ROWS_CODE, ROWS_FULL = 72, 106                       # scene rows with the code panel / without
+CW, CH = 12, 18
+COLS = int(os.environ.get("ASCII_LAB_COLS", "80"))    # 80 columns -> 960 px wide
+W, H, FPS = COLS * CW, 1920, 30
+ROWS_CODE, ROWS_FULL = 89, 106                       # scene rows with the code panel / without
 TAU = 2 * np.pi
 FONT_PATHS = ("/System/Library/Fonts/Menlo.ttc", "DejaVuSansMono.ttf", "consola.ttf")
 CAM_D = 7.0
@@ -889,7 +890,7 @@ def make_atlas():
     return out
 
 
-LAYOUT = dict(scale=(660, 740), weed=LAYOUT_WEED, mid=(640, 960))
+LAYOUT = dict(scale=(587, 660), weed=LAYOUT_WEED, mid=(480, 960))
 
 
 def grid(t, rows):
@@ -1016,7 +1017,7 @@ def panel(t, rows):
     start = next(i for i, line in enumerate(SOURCE) if line.startswith(mark))
     for j in range(hh // 30):
         n = start + j
-        text = SOURCE[n][:74] if n < len(SOURCE) else ""
+        text = SOURCE[n][:66] if n < len(SOURCE) else ""
         d.text((14, 14 + 30 * j), f"{n + 1:4d}", font=font(21), fill=(70, 80, 96))
         tone = (110, 150, 120) if text.strip().startswith("#") else (176, 186, 204)
         d.text((88, 14 + 30 * j), text, font=font(21), fill=(150, 220, 170) if j == 0 else tone)
@@ -1040,7 +1041,7 @@ def frame(t, code=True):
 
 def mp4(path, code, dur):
     ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS),
-                           "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", path], stdin=subprocess.PIPE)
+                           "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "16", path], stdin=subprocess.PIPE)
     for i in range(int(dur * FPS)):
         ff.stdin.write(frame(i / FPS, code).tobytes())
     ff.stdin.close()

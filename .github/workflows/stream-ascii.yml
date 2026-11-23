@@ -106,12 +106,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache
-          key: ascii-clownfish-${{ hashFiles('scripts/clownfish.py') }}-code=${{ inputs.code_panel }}-v2
+          key: ascii-clownfish-${{ hashFiles('scripts/clownfish.py') }}-code=${{ inputs.code_panel }}-v3
 
       - name: Render one loop
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           ASCII_LAB_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+          ASCII_LAB_COLS: "80"
         run: |
           set -euo pipefail
           mkdir -p .cache
@@ -142,7 +143,7 @@ jobs:
           test -s .cache/clownfish.mp4 || { echo "::error::render missing"; exit 1; }
 
           SECS=$(python -c "print(int(float('${HOURS}') * 3600))")
-          TRACK=$(ls music/*.mp3 music/*.m4a 2>/dev/null | head -1 || true)
+          TRACK=$(ls music/*.mp3 music/*.m4a 2>/dev/null | shuf -n 1 || true)
 
           AUDIO_IN=(-an)
           AUDIO_OUT=()
@@ -155,9 +156,9 @@ jobs:
           timeout --signal=INT --kill-after=30s "${SECS}s" ffmpeg \
             -hide_banner -loglevel info -re -stream_loop -1 \
             -i .cache/clownfish.mp4 "${AUDIO_IN[@]}" \
-            -vf "scale=1080:1920:flags=lanczos,setsar=1,fps=30" \
-            "${AUDIO_OUT[@]}" -c:v libx264 -preset veryfast -tune zerolatency \
-            -pix_fmt yuv420p -r 30 -g 60 -b:v 2600k -maxrate 3200k -bufsize 6000k \
+            -vf "scale=960:1920:flags=lanczos,setsar=1,fps=30" \
+            "${AUDIO_OUT[@]}" -c:v libx264 -preset faster -tune zerolatency \
+            -pix_fmt yuv420p -r 30 -g 60 -b:v 4200k -maxrate 5000k -bufsize 8000k \
             -f flv "$STREAM_URL"
           rc=$?
           echo "FFmpeg exited with $rc"
