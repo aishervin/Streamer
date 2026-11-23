@@ -119,8 +119,18 @@ jobs:
           FLAGS=""
           if [ "${{ inputs.code_panel }}" != "true" ]; then FLAGS="--no-code"; fi
           python scripts/clownfish.py mp4 .cache/clownfish.mp4 $FLAGS
-          ffprobe -v error -show_entries format=duration,size -of default=nw=1 .cache/clownfish.mp4
+          ffprobe -v error -show_entries stream=width,height -show_entries format=duration,size -of default=nw=1 .cache/clownfish.mp4
           test -s .cache/clownfish.mp4
+
+      - name: Preview frame
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -ss 4 -i .cache/clownfish.mp4 -frames:v 1 preview.png
+
+      - name: Upload preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-${{ github.run_id }}
+          path: preview.png
 
       - name: Fetch music
         if: inputs.music
@@ -173,6 +183,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
+            SAME=$(curl --silent --fail \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$REPOSITORY/actions/workflows/stream-ascii.yml/runs?per_page=30" \
+              | python -c "import json,sys; r=json.load(sys.stdin).get('workflow_runs',[]); me=int(sys.argv[1]); print(sum(1 for x in r if x['id'] > me and x['status'] in ('queued','in_progress')))" "$GITHUB_RUN_ID")
+            if [ "$SAME" -gt 0 ]; then
+              echo "Another run is already queued ($SAME); not queueing a duplicate."
+              exit 0
+            fi
+          fi
           echo "Resting two minutes, then queueing the next cycle."
           sleep 120
           curl --fail-with-body --silent --show-error -X POST \
