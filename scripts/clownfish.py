@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 HANDLE = '@ascii.lab'
 
 CW, CH = 12, 16
-COLS = int(os.environ.get("ASCII_LAB_COLS", "80"))    # 80 columns -> 960 px wide
+COLS = int(os.environ.get("ASCII_LAB_COLS", "90"))
 W, H, FPS = COLS * CW, 1920, 30
 ROWS_CODE, ROWS_FULL = 100, 120                       # scene rows with the code panel / without
 TAU = 2 * np.pi
@@ -890,7 +890,7 @@ def make_atlas():
     return out
 
 
-LAYOUT = dict(scale=(587, 660), weed=LAYOUT_WEED, mid=(480, 800))
+LAYOUT = dict(scale=(660, 740), weed=LAYOUT_WEED, mid=(640, 800))
 
 
 def grid(t, rows):

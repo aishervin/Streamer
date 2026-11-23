@@ -112,7 +112,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           ASCII_LAB_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
-          ASCII_LAB_COLS: "80"
+          ASCII_LAB_COLS: "90"
         run: |
           set -euo pipefail
           mkdir -p .cache
