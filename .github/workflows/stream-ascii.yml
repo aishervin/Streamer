@@ -158,7 +158,7 @@ jobs:
           AUDIO_IN=(-an)
           AUDIO_OUT=()
           if [ "$MUSIC" = "true" ] && [ -n "$TRACK" ]; then
-            AUDIO_IN=(-stream_loop -1 -i "$TRACK")
+            AUDIO_IN=(-re -stream_loop -1 -i "$TRACK")
             AUDIO_OUT=(-c:a aac -b:a 96k -ar 44100 -ac 2)
             echo "Audio: $(basename "$TRACK")"
           fi
