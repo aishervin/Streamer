@@ -1,0 +1,183 @@
+name: Stream ASCII Clownfish to Telegram
+
+# Renders scripts/clownfish.py (procedural ASCII clownfish + anemone scene) once,
+# caches the loop, then publishes it to a Telegram RTMPS destination on repeat.
+concurrency:
+  group: telegram-ascii-stream
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: "Streaming destination"
+        required: true
+        type: choice
+        options:
+          - channel
+          - group
+          - school
+          - custom
+        default: channel
+      custom_rtmps_url:
+        description: "Custom RTMPS URL (if destination is custom)"
+        required: false
+        type: string
+        default: ""
+      duration_hours:
+        description: "Stream window in hours (max 5)"
+        required: true
+        type: string
+        default: "5"
+      code_panel:
+        description: "Show the scrolling code panel at the bottom"
+        required: true
+        type: boolean
+        default: true
+      music:
+        description: "Mix background music from aishervin/Mp3"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    # GitHub-hosted runners stop at six hours; leave room for render and cleanup.
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg, fonts and Python packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet numpy pillow
+
+      - name: Resolve destination
+        id: destination
+        shell: bash
+        env:
+          CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
+          GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL }}
+          SCHOOL_URL: ${{ secrets.SCHOOL_RTMPS_URL }}
+          CUSTOM_URL: ${{ inputs.custom_rtmps_url }}
+          TARGET: ${{ inputs.destination }}
+        run: |
+          set -euo pipefail
+          case "$TARGET" in
+            channel)  STREAM_URL="$CHANNEL_URL"; NEED="CSTREAM_RTMPS_URL" ;;
+            group)    STREAM_URL="$GROUP_URL";   NEED="GSTREAM_RTMPS_URL (or STREAM_RTMPS_URL)" ;;
+            school)   STREAM_URL="$SCHOOL_URL";  NEED="SCHOOL_RTMPS_URL" ;;
+            custom)   STREAM_URL="$CUSTOM_URL";  NEED="custom_rtmps_url input" ;;
+            *) echo "::error::Unsupported destination: $TARGET"; exit 1 ;;
+          esac
+          if [ -z "${STREAM_URL:-}" ]; then
+            echo "::error::Missing destination: $NEED"
+            exit 1
+          fi
+          echo "::add-mask::$STREAM_URL"
+          echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
+          echo "Resolved destination: $TARGET"
+
+      - name: Check the renderer compiles
+        run: |
+          python -m py_compile scripts/clownfish.py
+          python - <<'PY'
+          import ast, pathlib
+          src = pathlib.Path("scripts/clownfish.py").read_text()
+          ast.parse(src)
+          print("scripts/clownfish.py parses:", len(src.splitlines()), "lines")
+          PY
+
+      - name: Restore cached loop
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: ascii-clownfish-${{ hashFiles('scripts/clownfish.py') }}-code=${{ inputs.code_panel }}-v2
+
+      - name: Render one loop
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          ASCII_LAB_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+        run: |
+          set -euo pipefail
+          mkdir -p .cache
+          FLAGS=""
+          if [ "${{ inputs.code_panel }}" != "true" ]; then FLAGS="--no-code"; fi
+          python scripts/clownfish.py mp4 .cache/clownfish.mp4 $FLAGS
+          ffprobe -v error -show_entries format=duration,size -of default=nw=1 .cache/clownfish.mp4
+          test -s .cache/clownfish.mp4
+
+      - name: Fetch music
+        if: inputs.music
+        run: |
+          set -euo pipefail
+          mkdir -p music
+          git clone --depth 1 https://github.com/aishervin/Mp3.git music_repo || true
+          find music_repo -type f \( -iname '*.mp3' -o -iname '*.m4a' \) -exec cp -n {} music/ \; 2>/dev/null || true
+          ls music | wc -l
+
+      - name: Stream live for the requested window
+        shell: bash
+        env:
+          STREAM_URL: ${{ steps.destination.outputs.stream_url }}
+          HOURS: ${{ inputs.duration_hours }}
+          MUSIC: ${{ inputs.music }}
+        run: |
+          set -uo pipefail
+          echo "::add-mask::$STREAM_URL"
+          test -s .cache/clownfish.mp4 || { echo "::error::render missing"; exit 1; }
+
+          SECS=$(python -c "print(int(float('${HOURS}') * 3600))")
+          TRACK=$(ls music/*.mp3 music/*.m4a 2>/dev/null | head -1 || true)
+
+          AUDIO_IN=(-an)
+          AUDIO_OUT=()
+          if [ "$MUSIC" = "true" ] && [ -n "$TRACK" ]; then
+            AUDIO_IN=(-stream_loop -1 -i "$TRACK")
+            AUDIO_OUT=(-c:a aac -b:a 96k -ar 44100 -ac 2)
+            echo "Audio: $(basename "$TRACK")"
+          fi
+
+          timeout --signal=INT --kill-after=30s "${SECS}s" ffmpeg \
+            -hide_banner -loglevel info -re -stream_loop -1 \
+            -i .cache/clownfish.mp4 "${AUDIO_IN[@]}" \
+            -vf "scale=1080:1920:flags=lanczos,setsar=1,fps=30" \
+            "${AUDIO_OUT[@]}" -c:v libx264 -preset veryfast -tune zerolatency \
+            -pix_fmt yuv420p -r 30 -g 60 -b:v 2600k -maxrate 3200k -bufsize 6000k \
+            -f flv "$STREAM_URL"
+          rc=$?
+          echo "FFmpeg exited with $rc"
+          if [[ "$rc" -ne 0 && "$rc" -ne 124 && "$rc" -ne 130 ]]; then exit "$rc"; fi
+
+      - name: Rest and queue the next cycle
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Resting two minutes, then queueing the next cycle."
+          sleep 120
+          curl --fail-with-body --silent --show-error -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$REPOSITORY/actions/workflows/stream-ascii.yml/dispatches" \
+            -d "{\"ref\":\"$REF_NAME\",\"inputs\":{\"destination\":\"${{ inputs.destination }}\",\"custom_rtmps_url\":\"${{ inputs.custom_rtmps_url }}\",\"duration_hours\":\"${{ inputs.duration_hours }}\",\"code_panel\":\"${{ inputs.code_panel }}\",\"music\":\"${{ inputs.music }}\"}}"
+          echo "Next cycle queued."
