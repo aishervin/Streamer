@@ -890,7 +890,7 @@ def make_atlas():
     return out
 
 
-LAYOUT = dict(scale=(660, 740), weed=LAYOUT_WEED, mid=(640, 800))
+LAYOUT = dict(scale=(660, 740), weed=LAYOUT_WEED, mid=(640, 680))
 
 
 def grid(t, rows):
