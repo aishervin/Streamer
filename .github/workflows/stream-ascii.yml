@@ -124,13 +124,13 @@ jobs:
 
       - name: Preview frame
         run: |
-          ffmpeg -hide_banner -loglevel error -y -ss 4 -i .cache/clownfish.mp4 -frames:v 1 preview.png
+          for s in 2 6 10 14 18; do ffmpeg -hide_banner -loglevel error -y -ss "$s" -i .cache/clownfish.mp4 -frames:v 1 "preview-$s.png"; done
 
       - name: Upload preview
         uses: actions/upload-artifact@v4
         with:
           name: preview-${{ github.run_id }}
-          path: preview.png
+          path: preview-*.png
 
       - name: Fetch music
         if: inputs.music

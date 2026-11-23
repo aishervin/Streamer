@@ -12,10 +12,10 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HANDLE = '@ascii.lab'
 
-CW, CH = 12, 18
+CW, CH = 12, 16
 COLS = int(os.environ.get("ASCII_LAB_COLS", "80"))    # 80 columns -> 960 px wide
 W, H, FPS = COLS * CW, 1920, 30
-ROWS_CODE, ROWS_FULL = 89, 106                       # scene rows with the code panel / without
+ROWS_CODE, ROWS_FULL = 100, 120                       # scene rows with the code panel / without
 TAU = 2 * np.pi
 FONT_PATHS = ("/System/Library/Fonts/Menlo.ttc", "DejaVuSansMono.ttf", "consola.ttf")
 CAM_D = 7.0
@@ -890,7 +890,7 @@ def make_atlas():
     return out
 
 
-LAYOUT = dict(scale=(587, 660), weed=LAYOUT_WEED, mid=(480, 960))
+LAYOUT = dict(scale=(587, 660), weed=LAYOUT_WEED, mid=(480, 800))
 
 
 def grid(t, rows):
