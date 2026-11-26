@@ -12,6 +12,7 @@ import random
 import re
 import subprocess
 import sys
+import signal
 import time
 import urllib.parse
 import urllib.request
@@ -283,8 +284,10 @@ def run_stream(rtmp_url, audio_dir, duration):
             time.sleep(1)
         print("Four-hour streaming window completed.", flush=True)
     finally:
-        if proc.stdin:
+        if proc.stdin and not proc.stdin.closed:
             proc.stdin.close()
+        if proc.poll() is None:
+            proc.send_signal(signal.SIGINT)
         try:
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
