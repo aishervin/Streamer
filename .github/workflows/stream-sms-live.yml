@@ -73,8 +73,10 @@ jobs:
           echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
           echo "Destination selected: $DESTINATION"
 
-      - name: Validate overlay script
-        run: python -m py_compile scripts/live_sms_overlay.py
+      - name: Validate overlay script and live SMS fetch
+        run: |
+          python -m py_compile scripts/live_sms_overlay.py
+          python -u scripts/live_sms_overlay.py --check-only --url "https://onlinesim.io/free_numbers/united-kingdom"
 
       - name: Stream four-country SMS overlay for four hours
         shell: bash
