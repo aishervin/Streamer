@@ -11,16 +11,17 @@ import os
 import random
 import re
 import subprocess
-import sys
 import signal
 import time
 import urllib.parse
 import urllib.request
+import html as html_lib
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
 API = "https://onlinesim.io/api/getFreeList"
+PAGE_URL = "https://onlinesim.io/free_numbers/united-kingdom"
 W, H = 1280, 720
 POLL_SECONDS = 60
 BG = (7, 11, 19)
@@ -55,18 +56,49 @@ F_BODY = font(15)
 F_SMALL = font(12)
 
 
-def api_get(country=None, number=None):
-    params = {"lang": "en", "count": "20"}
-    if country is not None:
-        params["country"] = str(country)
-    if number is not None:
-        params["number"] = str(number)
-    url = API + "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": "SHEN-Streamer/1.0"})
+def strip_html(value):
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    text = html_lib.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def scrape_page(url=PAGE_URL):
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+    })
     with urllib.request.urlopen(req, timeout=20) as response:
-        if response.status == 429:
-            raise RuntimeError("Onlinesim rate limit (HTTP 429)")
-        return json.loads(response.read().decode("utf-8"))
+        raw = response.read().decode("utf-8", "ignore")
+
+    numbers = []
+    for found in re.findall(r"\+44[\d\s]{9,16}", raw):
+        candidate = re.sub(r"\s+", " ", found).strip()
+        if candidate not in numbers:
+            numbers.append(candidate)
+
+    messages = []
+    for article in re.findall(r'<article class="sms-item.*?</article>', raw, re.S):
+        sender = re.search(r"<span>([^<]{1,30})</span>", article)
+        ago = re.search(r'<div class="ms-auto text-gray-700">([^<]+)</div>', article)
+        body = re.search(r'<div class="mb-4[^>]*">(.*?)</div>', article, re.S)
+        messages.append({
+            "sender": strip_html(sender.group(1)) if sender else "SMS",
+            "data_humans": strip_html(ago.group(1)) if ago else "",
+            "text": strip_html(body.group(1)) if body else "",
+        })
+
+    if not numbers:
+        return None
+    return {
+        "country_id": "web",
+        "country": "United Kingdom",
+        "slug": "united-kingdom",
+        "flag": country_flag("united-kingdom"),
+        "number": numbers[0],
+        "short": "",
+        "messages": messages[:5],
+        "last_time": dt.datetime.now(dt.timezone.utc),
+    }
 
 
 def parse_time(value):
@@ -85,11 +117,19 @@ def clean_message(value):
     text = str(value or "").replace("\r", " ").replace("\n", " ")
     text = re.sub(r"https?://\S+", "[link hidden]", text, flags=re.I)
     text = re.sub(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "[email hidden]", text, flags=re.I)
-    text = re.sub(r"\+?\d[\d\s().-]{3,}\d", "[number hidden]", text)
-    text = re.sub(r"(?<![A-Za-z])\d{4,8}(?![A-Za-z])", "[code hidden]", text)
-    text = re.sub(r"(?i)\b(otp|verification|security|login|confirmation)\s*(code)?\s*[:#-]?\s*[A-Z0-9-]{4,10}\b",
-                  r"\1 [code hidden]", text)
     return text[:190]
+
+
+def normalize_number(value):
+    """Clean a phone number string: keep digits, +, spaces, dashes, parens."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    # Remove any zero-width / invisible characters
+    text = re.sub(r"[\u200B\u200C\u200D\u200E\u200F\uFEFF\u00A0]", "", text)
+    # Remove any characters that aren't valid in a phone number
+    text = re.sub(r"[^\d+\-().\s]", "", text).strip()
+    return text
 
 
 def country_flag(slug):
@@ -105,54 +145,6 @@ def country_flag(slug):
     if not code:
         return "◎"
     return "".join(chr(0x1F1E6 + ord(c) - 65) for c in code)
-
-
-def unpack_country(country):
-    code = country.get("country")
-    result = api_get(code)
-    numbers = result.get("numbers") or {}
-    usable = [(k, v) for k, v in numbers.items() if not v.get("is_archive")]
-    if not usable:
-        return None
-    short, info = usable[0]
-    messages = ((result.get("messages") or {}).get("data") or [])
-    latest = max(messages, key=lambda m: parse_time(m.get("created_at")), default={})
-    return {
-        "country_id": code,
-        "country": country.get("country_text") or country.get("country_original") or "Unknown",
-        "slug": country.get("country_original") or "",
-        "flag": country_flag(country.get("country_original")),
-        "number": info.get("full_number") or str(short),
-        "short": str(short),
-        "last_time": parse_time(latest.get("created_at")),
-        "messages": messages,
-    }
-
-
-def discover_top_countries():
-    base = api_get()
-    countries = base.get("countries") or []
-    candidates = []
-    for country in countries:
-        try:
-            item = unpack_country(country)
-            if item:
-                candidates.append(item)
-        except Exception as exc:
-            print(f"Country lookup skipped: {country.get('country_text', '?')}: {exc}", flush=True)
-    candidates.sort(key=lambda x: x["last_time"], reverse=True)
-    return candidates[:4]
-
-
-def refresh_card(card):
-    result = api_get(card["country_id"], card["short"])
-    paginator = result.get("messages") or {}
-    messages = paginator.get("data") or []
-    card["messages"] = sorted(messages, key=lambda m: parse_time(m.get("created_at")), reverse=True)[:5]
-    card["number"] = (result.get("numbers") or {}).get(card["short"], {}).get("full_number") or card["number"]
-    if card["messages"]:
-        card["last_time"] = parse_time(card["messages"][0].get("created_at"))
-    return card
 
 
 def ellipsize(draw, text, fnt, max_width):
@@ -175,10 +167,13 @@ def render(cards, updated):
     draw.text((1120, 40), updated, font=F_SMALL, fill=MUTED)
 
     gap, left, top = 14, 20, 98
-    card_w, card_h = (W - 2 * left - 3 * gap) // 4, H - top - 42
-    for index in range(4):
+    active = [card for card in cards if card]
+    slots = len(active) if active else 4
+    card_w = (W - 2 * left - (slots - 1) * gap) // slots
+    card_h = H - top - 42
+    for index in range(slots):
         x = left + index * (card_w + gap)
-        card = cards[index] if index < len(cards) else None
+        card = active[index] if index < len(active) else None
         draw.rounded_rectangle((x, top, x + card_w, top + card_h), radius=15,
                                fill=PANEL, outline=LINE, width=2)
         if not card:
@@ -188,7 +183,14 @@ def render(cards, updated):
                                radius=14, fill=PANEL2)
         draw.text((x + 17, top + 16), card["flag"], font=font(23), fill=WHITE)
         draw.text((x + 62, top + 20), str(card["country"]).upper()[:19], font=F_COUNTRY, fill=MUTED)
-        draw.text((x + 17, top + 58), str(card["number"])[:20], font=F_NUMBER, fill=WHITE)
+        # Phone number with background box for better visibility
+        number_text = str(card["number"])[:20] if card["number"] else "N/A"
+        num_w = draw.textbbox((0, 0), number_text, font=F_NUMBER)[2]
+        draw.rounded_rectangle(
+            (x + 15, top + 50, x + 15 + num_w + 12, top + 82),
+            radius=4, fill=(5, 8, 15)
+        )
+        draw.text((x + 21, top + 58), number_text, font=F_NUMBER, fill=WHITE)
         draw.line((x + 14, top + 105, x + card_w - 14, top + 105), fill=LINE, width=1)
         draw.text((x + 17, top + 122), "LATEST MESSAGES", font=F_SUB, fill=GREEN)
         y = top + 153
@@ -233,12 +235,13 @@ def choose_audio(audio_dir):
     return random.choice(tracks) if tracks else None
 
 
-def run_stream(rtmp_url, audio_dir, duration):
+def run_stream(rtmp_url, audio_dir, duration, page_url=PAGE_URL, my_number=None, country=None):
     cards = []
     try:
-        cards = discover_top_countries()
+        first = scrape_page(page_url)
+        cards = [first] if first else []
     except Exception as exc:
-        print(f"Initial Onlinesim discovery failed: {exc}", flush=True)
+        print(f"Page scrape failed: {exc}", flush=True)
     if not cards:
         cards = [{"country_id": None, "country": "Connecting", "slug": "", "flag": "◎",
                   "number": "Waiting for number", "short": "", "messages": [], "last_time": dt.datetime.min}]
@@ -265,15 +268,12 @@ def run_stream(rtmp_url, audio_dir, duration):
         while time.monotonic() - start < duration:
             now = time.monotonic()
             if now >= next_refresh:
-                if cards and cards[0].get("country_id") is not None:
-                    refreshed = []
-                    for card in cards:
-                        try:
-                            refreshed.append(refresh_card(card))
-                        except Exception as exc:
-                            print(f"Refresh failed for {card['country']}: {exc}", flush=True)
-                            refreshed.append(card)
-                    cards = refreshed
+                if cards and cards[0].get("number") != "Waiting for number":
+                    try:
+                        fresh = scrape_page(page_url)
+                        cards = [fresh] if fresh else cards
+                    except Exception as exc:
+                        print(f"Page refresh failed: {exc}", flush=True)
                 last_image = render(cards, dt.datetime.now().strftime("%H:%M:%S"))
                 next_refresh = now + POLL_SECONDS
             try:
@@ -300,10 +300,11 @@ def main():
     parser.add_argument("--rtmp-url", required=True)
     parser.add_argument("--audio-dir", default="music")
     parser.add_argument("--duration-seconds", type=int, default=14400)
+    parser.add_argument("--url", default=PAGE_URL, help="Web page to scrape for numbers and SMS list")
     args = parser.parse_args()
     if not args.rtmp_url.startswith(("rtmp://", "rtmps://")):
         raise SystemExit("RTMPS destination URL is invalid")
-    run_stream(args.rtmp_url, args.audio_dir, args.duration_seconds)
+    run_stream(args.rtmp_url, args.audio_dir, args.duration_seconds, args.url)
 
 
 if __name__ == "__main__":
