@@ -89,13 +89,13 @@ jobs:
             --url "https://onlinesim.io/free_numbers/united-kingdom"
 
       - name: Rest for thirty minutes
-        if: success()
+        if: ${{ !cancelled() }}
         run: |
-          echo "Four-hour stream finished. Resting for 30 minutes."
+          echo "Stream cycle ended (success or failure). Resting for 30 minutes before retry."
           sleep 1800
 
       - name: Queue the next cycle
-        if: success()
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -111,4 +111,4 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$REPOSITORY/actions/workflows/stream-sms-live.yml/dispatches" \
             -d "{\"ref\":\"$REF_NAME\",\"inputs\":{\"destination\":\"$DESTINATION\"}}"
-          echo "Next four-hour cycle queued."
+          echo "Next four-hour cycle queued (destination: $DESTINATION)."
