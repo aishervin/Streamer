@@ -81,6 +81,36 @@ def strip_html(value):
     return re.sub(r"\s+", " ", text).strip()
 
 
+
+FLAG_CACHE_DIR = Path(tempfile.gettempdir()) / "sms_flags"
+_FLAG_IMG_CACHE = {}
+
+
+def flag_image(iso2):
+    """Return a 30x22 RGBA flag image for an ISO-3166 code, or None."""
+    key = str(iso2 or "").lower()[:2]
+    if not key or not key.isalpha():
+        return None
+    if key in _FLAG_IMG_CACHE:
+        return _FLAG_IMG_CACHE[key]
+    try:
+        FLAG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path = FLAG_CACHE_DIR / f"{key}.png"
+        if not path.exists():
+            req = urllib.request.Request(
+                f"https://flagcdn.com/w80/{key}.png",
+                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                path.write_bytes(r.read())
+        img = Image.open(path).convert("RGBA").resize((30, 22), Image.LANCZOS)
+        _FLAG_IMG_CACHE[key] = img
+        return img
+    except Exception as exc:
+        print(f"[Flag] {key}: {exc}", flush=True)
+        _FLAG_IMG_CACHE[key] = None
+        return None
+
 def clean_message(value):
     text = str(value or "").replace("\r", " ").replace("\n", " ")
     text = re.sub(r"https?://\S+", "[link hidden]", text, flags=re.I)
@@ -159,6 +189,7 @@ def scrape_country(slug, name, code, api_code, accent):
         "slug": slug,
         "code": code,
         "accent": accent,
+        "flag": code.lower(),
         "number": number,
         "messages": messages,
         "last_time": dt.datetime.now(dt.timezone.utc),
@@ -263,8 +294,12 @@ def render(cards, updated):
 
         accent = card.get("accent") or (59, 130, 246)
         code = str(card.get("code") or "SMS")[:3]
-        draw.rounded_rectangle((x + 15, top + 15, x + 53, top + 40), radius=6, fill=accent)
-        draw.text((x + 22, top + 19), code, font=F_CODE, fill=WHITE)
+        flag = flag_image(code)
+        if flag:
+            image.paste(flag, (x + 15, top + 17), flag)
+        else:
+            draw.rounded_rectangle((x + 15, top + 15, x + 53, top + 40), radius=6, fill=accent)
+            draw.text((x + 22, top + 19), code, font=F_CODE, fill=WHITE)
         draw.text((x + 62, top + 19), str(card["country"]).upper()[:18], font=F_COUNTRY, fill=WHITE)
 
         number_text = str(card.get("number") or "N/A")[:22]
