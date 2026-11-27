@@ -5,6 +5,9 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  push:
+    paths:
+      - '.github/workflows/stream-sms-live.yml'
   workflow_dispatch:
     inputs:
       destination:
@@ -55,7 +58,7 @@ jobs:
         id: destination
         shell: bash
         env:
-          DESTINATION: ${{ inputs.destination }}
+          DESTINATION: ${{ inputs.destination || 'channel' }}
           CHANNEL_URL: ${{ secrets.CSTREAM_RTMPS_URL }}
           GROUP_URL: ${{ secrets.GSTREAM_RTMPS_URL || secrets.STREAM_RTMPS_URL }}
         run: |
@@ -71,6 +74,7 @@ jobs:
           fi
           echo "::add-mask::$STREAM_URL"
           echo "stream_url=$STREAM_URL" >> "$GITHUB_OUTPUT"
+          echo "destination=$DESTINATION" >> "$GITHUB_OUTPUT"
           echo "Destination selected: $DESTINATION"
 
       - name: Validate overlay script and live SMS fetch
@@ -100,7 +104,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           REF_NAME: ${{ github.ref_name }}
-          DESTINATION: ${{ inputs.destination }}
+          DESTINATION: ${{ steps.destination.outputs.destination }}
         shell: bash
         run: |
           set -euo pipefail
