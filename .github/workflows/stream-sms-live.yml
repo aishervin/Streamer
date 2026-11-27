@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - '.github/workflows/stream-sms-live.yml'
+      - 'scripts/live_sms_overlay.py'
   workflow_dispatch:
     inputs:
       destination:
