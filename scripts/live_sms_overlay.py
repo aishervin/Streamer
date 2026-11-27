@@ -361,6 +361,12 @@ def render(cards, updated):
 
 
 def build_audio_input(audio_dir):
+    """Normalize every source track before building a loopable playlist.
+
+    Mixed AAC/M4A/MP3 streams in one concat input can confuse FFmpeg's AAC
+    decoder and terminate the whole RTMP process. Re-encode each track to a
+    consistent MP3 profile first, skipping only files that cannot be decoded.
+    """
     if not audio_dir or not os.path.isdir(audio_dir):
         return None, None
     tracks = sorted(
@@ -369,18 +375,49 @@ def build_audio_input(audio_dir):
     )
     if not tracks:
         return None, None
-    random.shuffle(tracks)
-    if len(tracks) == 1:
-        return tracks[0], False
+
+    normalized_dir = Path(tempfile.gettempdir()) / "sms_overlay_audio_normalized"
+    normalized_dir.mkdir(parents=True, exist_ok=True)
+    normalized = []
+    for index, track in enumerate(tracks):
+        output = normalized_dir / f"track_{index:04d}.mp3"
+        try:
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-i", track, "-map", "0:a:0", "-vn",
+                    "-ac", "2", "-ar", "44100",
+                    "-c:a", "libmp3lame", "-b:a", "128k",
+                    "-f", "mp3", str(output),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=300,
+            )
+            if result.returncode == 0 and output.exists() and output.stat().st_size > 1024:
+                normalized.append(str(output.resolve()))
+                print(f"[Audio] Normalized: {Path(track).name}", flush=True)
+            else:
+                print(f"[Audio] Skipping unreadable track: {Path(track).name}; {result.stderr[-500:]}", flush=True)
+        except Exception as exc:
+            print(f"[Audio] Skipping {Path(track).name}: {exc}", flush=True)
+
+    if not normalized:
+        print("[Audio] No valid audio tracks; continuing with silent video.", flush=True)
+        return None, None
+
+    random.shuffle(normalized)
+    if len(normalized) == 1:
+        return normalized[0], False
 
     playlist_file = Path(tempfile.gettempdir()) / "sms_overlay_audio_playlist.txt"
     lines = []
-    for t in tracks:
-        escaped = t.replace("'", "'\\''")
+    for track in normalized:
+        escaped = track.replace("'", "'\\''")
         lines.append(f"file '{escaped}'")
     playlist_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return str(playlist_file), True
-
 
 def run_stream(rtmp_url, audio_dir, duration, page_url=PAGE_URL):
     cards = scrape_four_countries(primary_url=page_url)
