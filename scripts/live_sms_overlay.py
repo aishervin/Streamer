@@ -435,7 +435,7 @@ def run_stream(rtmp_url, audio_dir, duration, page_url=PAGE_URL):
     print(f"Selected {len(cards)} active country cards; audio={'on' if audio_input else 'off'}.", flush=True)
 
     cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "info",
+        "ffmpeg", "-hide_banner", "-loglevel", "warning",
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", "1", "-i", "pipe:0",
     ]
     if audio_input:
@@ -454,14 +454,20 @@ def run_stream(rtmp_url, audio_dir, duration, page_url=PAGE_URL):
     ]
     if audio_input:
         cmd += ["-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2"]
-    cmd += ["-f", "flv", rtmp_url]
+    cmd += ["-f", "flv", "-flvflags", "no_duration_filesize", rtmp_url]
 
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    start = time.monotonic()
-    next_refresh = time.monotonic() + POLL_SECONDS
+    def launch_ffmpeg():
+        process = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        print(f"[RTMP] FFmpeg started (pid={process.pid}).", flush=True)
+        return process
+
+    proc = launch_ffmpeg()
+    started_at = time.monotonic()
+    next_refresh = started_at + POLL_SECONDS
     last_image = render(cards, dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S"))
+    reconnect_delay = 5
     try:
-        while time.monotonic() - start < duration:
+        while time.monotonic() - started_at < duration:
             now = time.monotonic()
             if now >= next_refresh:
                 try:
@@ -474,16 +480,52 @@ def run_stream(rtmp_url, audio_dir, duration, page_url=PAGE_URL):
                     print(f"[SMS Refresh] failed: {exc}", flush=True)
                 last_image = render(cards, dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S"))
                 next_refresh = now + POLL_SECONDS
+
+            # A remote RTMP server can close a long-running publish session.
+            # Keep the four-hour window alive and reconnect FFmpeg without
+            # terminating the Python overlay process.
+            if proc.poll() is not None:
+                print(f"[RTMP] FFmpeg exited ({proc.returncode}); reconnecting in {reconnect_delay}s.", flush=True)
+                time.sleep(reconnect_delay)
+                try:
+                    proc = launch_ffmpeg()
+                    reconnect_delay = min(reconnect_delay * 2, 60)
+                except Exception as exc:
+                    print(f"[RTMP] Restart failed: {exc}", flush=True)
+                    time.sleep(reconnect_delay)
+                continue
+
             try:
                 proc.stdin.write(last_image.tobytes())
                 proc.stdin.flush()
-            except BrokenPipeError:
-                raise RuntimeError("FFmpeg stopped accepting video frames")
+                reconnect_delay = 5
+            except (BrokenPipeError, OSError, ValueError) as exc:
+                print(f"[RTMP] FFmpeg input closed ({exc}); reconnecting.", flush=True)
+                try:
+                    if proc.stdin and not proc.stdin.closed:
+                        proc.stdin.close()
+                except Exception:
+                    pass
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    proc.terminate()
+                time.sleep(reconnect_delay)
+                try:
+                    proc = launch_ffmpeg()
+                    reconnect_delay = min(reconnect_delay * 2, 60)
+                except Exception as restart_exc:
+                    print(f"[RTMP] Restart failed: {restart_exc}", flush=True)
+                    time.sleep(reconnect_delay)
             time.sleep(1)
+
         print("Four-hour streaming window completed.", flush=True)
     finally:
         if proc.stdin and not proc.stdin.closed:
-            proc.stdin.close()
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
         if proc.poll() is None:
             proc.send_signal(signal.SIGINT)
         try:
