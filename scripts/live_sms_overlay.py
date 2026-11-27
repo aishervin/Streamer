@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Live four-country SMS overlay for Telegram RTMP.
 
-Public inbox messages are rendered with authentication codes, URLs, phone numbers,
-and email addresses redacted before they reach the stream.
+Fetches public inbox messages from the official onlinesim.io JSON API
+(https://onlinesim.io/api/getFreeList?country=<code>&lang=en) and renders
+them with authentication codes, URLs, phone numbers, and email addresses
+redacted before they reach the stream.
 """
 import argparse
 import datetime as dt
 import html as html_lib
+import json
 import os
 import random
 import re
@@ -23,6 +26,7 @@ except ImportError:
     Image = ImageDraw = ImageFont = None
 
 PAGE_URL = "https://onlinesim.io/free_numbers/united-kingdom"
+API_URL = "https://onlinesim.io/api/getFreeList"
 W, H = 1280, 720
 POLL_SECONDS = 60
 BG = (7, 11, 19)
@@ -34,17 +38,18 @@ MUTED = (139, 156, 181)
 GREEN = (101, 226, 190)
 AMBER = (245, 196, 104)
 
+# (slug, display name, ISO code, onlinesim numeric country code, accent color)
 COUNTRY_CANDIDATES = [
-    ("united-kingdom", "United Kingdom", "GB", (59, 130, 246), r"\+44[\d\s\-]{8,16}"),
-    ("france", "France", "FR", (99, 102, 241), r"\+33[\d\s\-]{8,16}"),
-    ("netherlands", "Netherlands", "NL", (249, 115, 22), r"\+31[\d\s\-]{8,16}"),
-    ("sweden", "Sweden", "SE", (234, 179, 8), r"\+46[\d\s\-]{8,16}"),
-    ("finland", "Finland", "FI", (14, 165, 233), r"\+358[\d\s\-]{7,15}"),
-    ("ukraine", "Ukraine", "UA", (56, 189, 248), r"\+380[\d\s\-]{7,14}"),
-    ("belgium", "Belgium", "BE", (245, 158, 11), r"\+32[\d\s\-]{7,15}"),
-    ("austria", "Austria", "AT", (239, 68, 68), r"\+43[\d\s\-]{7,15}"),
-    ("poland", "Poland", "PL", (244, 63, 94), r"\+48[\d\s\-]{7,15}"),
-    ("denmark", "Denmark", "DK", (225, 29, 72), r"\+45[\d\s\-]{7,14}"),
+    ("united-kingdom", "United Kingdom", "GB", 44, (59, 130, 246)),
+    ("france", "France", "FR", 33, (99, 102, 241)),
+    ("netherlands", "Netherlands", "NL", 31, (249, 115, 22)),
+    ("germany", "Germany", "DE", 49, (239, 68, 68)),
+    ("spain", "Spain", "ES", 34, (244, 63, 94)),
+    ("italy", "Italy", "IT", 39, (34, 197, 94)),
+    ("belgium", "Belgium", "BE", 32, (245, 158, 11)),
+    ("austria", "Austria", "AT", 43, (239, 68, 68)),
+    ("ireland", "Ireland", "IE", 353, (22, 163, 74)),
+    ("czech", "Czech Republic", "CZ", 420, (14, 165, 233)),
 ]
 
 _FONT_CACHE = {}
@@ -83,50 +88,70 @@ def clean_message(value):
     return text[:160]
 
 
-def scrape_country(slug, name, code, accent, prefix_regex, url_override=None):
-    url = url_override or f"https://onlinesim.io/free_numbers/{slug}"
+def extract_sender(text, in_number):
+    """Prefer a [Service] prefix inside the message body; fall back to in_number."""
+    bracket = re.match(r"^\[([^\]\[]{1,30})\]", text)
+    if bracket:
+        return bracket.group(1).strip()
+    sender = str(in_number or "").strip()
+    if not sender or sender.lower() == "verify":
+        return "SMS"
+    return sender[:30]
+
+
+def parse_country_payload(payload):
+    """Turn the raw getFreeList JSON into (display_number, messages) or None."""
+    if not isinstance(payload, dict) or payload.get("response") != 1:
+        return None
+    numbers = payload.get("numbers") or {}
+    if not numbers:
+        return None
+
+    messages_block = payload.get("messages") or {}
+    data = messages_block.get("data") or []
+
+    # Pick the number the message list belongs to when possible.
+    my_number = str(messages_block.get("number") or "")
+    key = my_number if my_number and my_number in numbers else next(iter(numbers))
+    info = numbers.get(key) or {}
+    full = str(info.get("full_number") or key)
+    digits = re.sub(r"\D", "", full)
+    if len(digits) < 7:
+        return None
+    display_number = "+" + digits
+
+    messages = []
+    for item in data:
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        messages.append({
+            "sender": extract_sender(text, item.get("in_number")),
+            "data_humans": str(item.get("data_humans") or "")[:20],
+            "text": text,
+        })
+
+    return display_number, messages[:6]
+
+
+def scrape_country(slug, name, code, api_code, accent):
+    url = f"{API_URL}?country={api_code}&lang=en"
     req = urllib.request.Request(url, headers={
         "User-Agent": (
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
+        "Referer": f"https://onlinesim.io/free_numbers/{slug}",
     })
     with urllib.request.urlopen(req, timeout=18) as response:
-        raw = response.read().decode("utf-8", "ignore")
+        payload = json.loads(response.read().decode("utf-8", "ignore"))
 
-    numbers = []
-    for found in re.findall(prefix_regex, raw):
-        candidate = re.sub(r"\s+", " ", found).strip()
-        digits = re.sub(r"\D", "", candidate)
-        if len(digits) >= 9 and candidate not in numbers:
-            numbers.append(candidate)
-
-    if not numbers:
-        # Generic fallback regex inside free_numbers page
-        for found in re.findall(r"\+\d{1,3}[\s\-]?\d[\d\s\-]{7,15}\d", raw):
-            candidate = re.sub(r"\s+", " ", found).strip()
-            digits = re.sub(r"\D", "", candidate)
-            if len(digits) >= 9 and candidate not in numbers:
-                numbers.append(candidate)
-
-    messages = []
-    for article in re.findall(r'<article[^>]*class="[^"]*sms-item.*?</article>', raw, re.S):
-        sender = re.search(r"<span>([^<]{1,40})</span>", article)
-        ago = re.search(r'<div class="ms-auto text-gray-700">([^<]+)</div>', article)
-        body = re.search(r'<div class="mb-4[^>]*">(.*?)</div>', article, re.S)
-        body_text = strip_html(body.group(1)) if body else ""
-        if not body_text:
-            continue
-        messages.append({
-            "sender": strip_html(sender.group(1)) if sender else "SMS",
-            "data_humans": strip_html(ago.group(1)) if ago else "",
-            "text": body_text,
-        })
-
-    if not numbers:
+    parsed = parse_country_payload(payload)
+    if not parsed:
         return None
+    number, messages = parsed
 
     return {
         "country_id": slug,
@@ -134,22 +159,38 @@ def scrape_country(slug, name, code, accent, prefix_regex, url_override=None):
         "slug": slug,
         "code": code,
         "accent": accent,
-        "number": numbers[0],
-        "messages": messages[:6],
+        "number": number,
+        "messages": messages,
         "last_time": dt.datetime.now(dt.timezone.utc),
     }
+
+
+def slug_from_url(url):
+    """Map a free_numbers page URL (or slug) to its API country code."""
+    if not url:
+        return None
+    match = re.search(r"free_numbers/([a-z0-9\-_]+)", url)
+    slug = match.group(1) if match else url.strip().lower()
+    for candidate in COUNTRY_CANDIDATES:
+        if candidate[0] == slug:
+            return candidate[3]
+    return None
 
 
 def scrape_four_countries(previous_cards=None, primary_url=None):
     prev_map = {c["slug"]: c for c in (previous_cards or []) if c and c.get("slug")}
     cards = []
 
-    for idx, (slug, name, code, accent, prefix_regex) in enumerate(COUNTRY_CANDIDATES):
+    primary_code = slug_from_url(primary_url)
+    ordered = list(COUNTRY_CANDIDATES)
+    if primary_code is not None:
+        ordered.sort(key=lambda c: 0 if c[3] == primary_code else 1)
+
+    for slug, name, code, api_code, accent in ordered:
         if len(cards) >= 4:
             break
-        override = primary_url if (idx == 0 and primary_url and "free_numbers/" in primary_url) else None
         try:
-            card = scrape_country(slug, name, code, accent, prefix_regex, url_override=override)
+            card = scrape_country(slug, name, code, api_code, accent)
             if card:
                 cards.append(card)
                 continue
@@ -385,7 +426,7 @@ def main():
     parser.add_argument("--rtmp-url", required=False, default="")
     parser.add_argument("--audio-dir", default="music")
     parser.add_argument("--duration-seconds", type=int, default=14400)
-    parser.add_argument("--url", default=PAGE_URL, help="Primary web page to scrape for numbers and SMS list")
+    parser.add_argument("--url", default=PAGE_URL, help="Primary free_numbers page; its slug selects the lead API country")
     parser.add_argument("--check-only", action="store_true", help="Verify live SMS fetch and exit")
     args = parser.parse_args()
 
